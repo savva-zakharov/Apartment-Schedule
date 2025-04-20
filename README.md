@@ -50,5 +50,14 @@ Right click on the current project and select import module, navigate to the pla
 
 Once you have the module loaded, press F5 to run the script. It will create a new sheet leaving the original untouched. 
 
+The scrpit converts the sourve spreadsheet looking like this:
+
+![image](https://github.com/user-attachments/assets/69c3aa9f-5315-4ba4-8017-7a7ef6982824)
+
+to a more user firendly format, broken down by floors and blocks:
+
+![image](https://github.com/user-attachments/assets/3bf667fe-ce2c-4456-8ba4-cf69134f33d9)
+
+
 You can modify the script to customise the results, e.g change the colours
 
