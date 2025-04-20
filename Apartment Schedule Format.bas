@@ -23,7 +23,7 @@ Sub ModifySpreadsheetToNewSheet()
     lastRow = wsNew.Cells(wsNew.Rows.Count, "C").End(xlUp).Row
     
     ' Delete rows where column C equals 0
-    For i = lastRow To 2 Step -1 ' Start from the bottom to avoid skipping rows
+    For i = lastRow To 2 Step -1 ' Start from the bottom to avoid skiplevelStartRowng rows
         If wsNew.Cells(i, "F").Value = 0 Then
             wsNew.Rows(i).Delete
         End If
@@ -52,17 +52,19 @@ Sub ModifySpreadsheetToNewSheet()
     ' Recalculate the last row after deletions
     lastRow = wsNew.Cells(wsNew.Rows.Count, "C").End(xlUp).Row
     
+
     ' Apply color formatting based on column D values
     For i = 2 To lastRow
+        Set Rng = wsNew.Range(wsNew.Cells(i, "A"), wsNew.Cells(i, "P"))
         Select Case Mid(wsNew.Cells(i, "D").Value, 1, 1)
             Case "1"
-                wsNew.Rows(i).Interior.Color = RGB(217, 225, 242)     ' Light Blue
+                Rng.Interior.Color = RGB(217, 225, 242)     ' Light Blue
             Case "2"
-                wsNew.Rows(i).Interior.Color = RGB(255, 242, 204) ' Light Yellow
+                Rng.Interior.Color = RGB(255, 242, 204) ' Light Yellow
             Case "3"
-                wsNew.Rows(i).Interior.Color = RGB(242, 225, 217) ' Pink
+                Rng.Interior.Color = RGB(242, 225, 217) ' levelStartRownk
             Case "D"
-                wsNew.Rows(i).Interior.Color = RGB(211, 177, 194) ' Light Purple
+                Rng.Interior.Color = RGB(211, 177, 194) ' Light Purple
         End Select
     Next i
           
@@ -158,17 +160,18 @@ Sub ModifySpreadsheetToNewSheet()
     
    
     
-    
+    'find the last row
     lastRow = wsNew.Cells(wsNew.Rows.Count, "C").End(xlUp).Row
-    ' Insert empty rows and sum for columns I-K when G changes
-    
-     ' Insert 2 empty rows
+        
+    ' Insert 2 empty rows
     wsNew.Rows(2).Resize(2).Insert Shift:=xlDown
     
+    'set up collections for tracking level and floor changes
     Set changeLevel = New Collection    'collection for tracking level changes
     Set changeBlock = New Collection    'collection for tracking block changes
     Set sumColumns = New Collection    'collection for columns to add
     
+    'set up which columnds need to be summed
     sumColumns.Add "H"
     sumColumns.Add "I"
     sumColumns.Add "J"
@@ -180,11 +183,11 @@ Sub ModifySpreadsheetToNewSheet()
     sumColumns.Add "E"
     sumColumns.Add "P"
     
+    'initiating the loop and strating parameters
     previousLevel = wsNew.Cells(4, "G").Value
     previousBlock = wsNew.Cells(4, "F").Value
-    
     i = 4
-    Pi = 4
+    levelStartRow = 4
     blockStartRow = 4
     last = 1000
     'For i = 3 To lastRow
@@ -211,12 +214,12 @@ Sub ModifySpreadsheetToNewSheet()
             
             If p = 1 Then
             With wsNew.Cells(i, sumColumns(p))
-                    .Formula = "=COUNTA(" & sumColumns(p) & i - 1 & ":" & sumColumns(p) & Pi & ")"
+                    .Formula = "=COUNTA(" & sumColumns(p) & i - 1 & ":" & sumColumns(p) & levelStartRow & ")"
                     .Font.Bold = True
             End With
             Else
             With wsNew.Cells(i, sumColumns(p))
-                    .Formula = "=SUM(" & sumColumns(p) & i - 1 & ":" & sumColumns(p) & Pi & ")"
+                    .Formula = "=SUM(" & sumColumns(p) & i - 1 & ":" & sumColumns(p) & levelStartRow & ")"
                     .Font.Bold = True
             End With
             End If
@@ -225,15 +228,15 @@ Sub ModifySpreadsheetToNewSheet()
             
             ' sum up apartment types
             With wsNew.Cells(i, "T")
-                .Formula = "=SUM(Q" & i - 1 & ":Q" & Pi & ")"
+                .Formula = "=SUM(Q" & i - 1 & ":Q" & levelStartRow & ")"
                 .Font.Bold = True
             End With
             With wsNew.Cells(i, "U")
-                .Formula = "=SUM(R" & i - 1 & ":R" & Pi & ")"
+                .Formula = "=SUM(R" & i - 1 & ":R" & levelStartRow & ")"
                 .Font.Bold = True
             End With
             With wsNew.Cells(i, "V")
-                .Formula = "=SUM(S" & i - 1 & ":S" & Pi & ")"
+                .Formula = "=SUM(S" & i - 1 & ":S" & levelStartRow & ")"
                 .Font.Bold = True
             End With
             'calculate %s
@@ -265,13 +268,13 @@ Sub ModifySpreadsheetToNewSheet()
             
             ' sum up total apartments
             With wsNew.Cells(i, "H")
-                .Formula = "=COUNTA(H" & i - 1 & ":H" & Pi & ")"
+                .Formula = "=COUNTA(H" & i - 1 & ":H" & levelStartRow & ")"
                 .Font.Bold = True
             End With
             
             
             ' Apply borders for the block range (A to O, blockStartRow to i-1)
-            Set Rng = wsNew.Range(wsNew.Cells(i - 1, "A"), wsNew.Cells(Pi, "P"))
+            Set Rng = wsNew.Range(wsNew.Cells(i - 1, "A"), wsNew.Cells(levelStartRow, "P"))
             
             With Rng.Borders(xlInsideHorizontal)
                 .LineStyle = xlContinuous
@@ -307,7 +310,7 @@ Sub ModifySpreadsheetToNewSheet()
 
 
             ' Add title to floors
-            With wsNew.Cells(Pi - 1, "F")
+            With wsNew.Cells(levelStartRow - 1, "F")
                 .Value = "Block " & previousBlock & " Level " & previousLevel
                 .Font.Bold = True
                 .Font.Color = RGB(0, 176, 240)
@@ -424,7 +427,7 @@ Sub ModifySpreadsheetToNewSheet()
             
             
             i = i + 3 ' Skip the inserted empty rows
-            Pi = i
+            levelStartRow = i
             lastRow = lastRow + 3
         End If
         
@@ -537,16 +540,18 @@ Sub ModifySpreadsheetToNewSheet()
     
     ' Move columns H, F, and G to A, B, and C respectively
     
-    'wsNew.Columns("H:H").Cut
-    'wsNew.Columns("A:A").Insert Shift:=xlToRight
-    'wsNew.Columns("G:G").Cut
-    'wsNew.Columns("B:B").Insert Shift:=xlToRight
-    'wsNew.Columns("H:H").Cut
-    'wsNew.Columns("C:C").Insert Shift:=xlToRight
+    wsNew.Columns("H:H").Cut
+    wsNew.Columns("A:A").Insert Shift:=xlToRight
+    wsNew.Columns("G:G").Cut
+    wsNew.Columns("B:B").Insert Shift:=xlToRight
+    wsNew.Columns("H:H").Cut
+    wsNew.Columns("C:C").Insert Shift:=xlToRight
+    wsNew.Columns("L:L").Cut
+    wsNew.Columns("H:H").Insert Shift:=xlToRight
     
     'Delete columns D and E in the new sheet
     
-    'wsNew.Columns("D:E").Delete
+    wsNew.Columns("D:E").Delete
     
     With wsNew
         .Range("A1:A" & .Cells(.Rows.Count, "A").End(xlUp).Row).HorizontalAlignment = xlCenter
@@ -554,6 +559,8 @@ Sub ModifySpreadsheetToNewSheet()
         .Range("C1:C" & .Cells(.Rows.Count, "C").End(xlUp).Row).HorizontalAlignment = xlCenter
         .Range("E1:E" & .Cells(.Rows.Count, "E").End(xlUp).Row).HorizontalAlignment = xlCenter
     End With
+    
+    
     
 End Sub
 
