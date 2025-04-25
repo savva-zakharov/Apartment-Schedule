@@ -3,7 +3,7 @@ Function ColLetterToNumber(colLetter As String) As Long
     ColLetterToNumber = Range(colLetter & "1").Column
 End Function
 
-Sub ModifySpreadsheetToNewSheet()
+Sub ProduceHQA()
 
     Dim wsOriginal As Worksheet
     Dim wsLong As Worksheet
@@ -235,7 +235,7 @@ Sub ModifySpreadsheetToNewSheet()
     
     Call drawBorderThickOutline(wsTypes.Range("A2:N" & lastRow))
     
-    wsTypes.Cells(lastRow + 1, 1).Formula = "=SUM(A2:A" & lastRow
+    wsTypes.Cells(lastRow + 1, 1).Formula = "=SUM(A2:A" & lastRow & ")"
     
     With wsTypes.columns("F").Font
         .Color = RGB(128, 128, 128) ' Grey text
@@ -625,6 +625,19 @@ Sub ModifySpreadsheetToNewSheet()
     With wsShort.PageSetup
         .PrintTitleRows = "$7:$9"
     End With
+    
+
+    wsLong.Activate
+    Application.CutCopyMode = False
+    wsLong.Range("A1").Select
+    
+    wsShort.Activate
+    Application.CutCopyMode = False
+    wsShort.Range("A1").Select
+    
+    wsTypes.Activate
+    Application.CutCopyMode = False
+    wsTypes.Range("A1").Select
     
     'wsLong.Columns("O:O").Cut
     'wsLong.Columns("F:F").Insert Shift:=xlToRight
