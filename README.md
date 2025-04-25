@@ -28,27 +28,19 @@ Click through the rest of the dialog and click Finish
 
 Step 4:
 
-![image](https://github.com/user-attachments/assets/ac751600-ffbf-41bf-a2fb-6cbc25d285a1)
+Open the Template file. When first opening it, you might need to enable macros:
+![image](https://github.com/user-attachments/assets/8aeaa461-ae9a-4b17-95c6-97a0aa73b2f5)
 
-Rename the imported sheet into Sheet1. This will alsways be the source for the formatting and will not be modified by the script.
 
 Step 5:
 
-Press Alt+F11 to open the Microsoft Visual Basic for Applications window
+Copy all the data from text file into the sourceData sheet in the template file
 
-![image](https://github.com/user-attachments/assets/e4872290-a02b-4a5c-be49-c9581fb9340d)
+Step 6:
 
-Select Insert > Module to add a new module to the current project.
+Press alt + F8 and press run
+![image](https://github.com/user-attachments/assets/87f2f436-6f11-408f-9b64-eb9897d9e562)
 
-Copy paste the code into the open editor
-
-Alternatively 
-
-![image](https://github.com/user-attachments/assets/7ec12afa-6992-433b-a374-822ecc55eacb)
-
-Right click on the current project and select import module, navigate to the place where you have the main script file downloaded
-
-Once you have the module loaded, press F5 to run the script. It will create a new sheet leaving the original untouched. 
 
 The scrpit converts the sourve spreadsheet looking like this:
 
