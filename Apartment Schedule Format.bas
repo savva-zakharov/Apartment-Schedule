@@ -21,7 +21,10 @@ Sub ProduceHQA()
     Dim currentDate As String
     currentDate = Format(Date, "yy-mm-dd") ' You can change format here
     
-    
+    Dim bedsSource
+    Dim persSource
+    Dim bedsRef
+    Dim persRef
     
     
     
@@ -108,22 +111,6 @@ Sub ProduceHQA()
     wsLong.columns("K:K").Copy
     wsLong.columns("L:L").PasteSpecial Paste:=xlPasteAll
     
-
-    ' Apply color formatting based on column E values
-    For i = 2 To lastRow
-        Set rng = wsLong.Range(wsLong.Cells(i, "A"), wsLong.Cells(i, "N"))
-        Select Case Mid(wsLong.Cells(i, "E").Value, 1, 1)
-            Case "1"
-                rng.Interior.Color = RGB(217, 233, 248) ' Light Blue
-            Case "2"
-                rng.Interior.Color = RGB(255, 242, 204) ' Light Yellow
-            Case "3"
-                rng.Interior.Color = RGB(251, 226, 213) ' Pink
-            Case "D"
-                rng.Interior.Color = RGB(211, 177, 194) ' Light Purple
-        End Select
-    Next i
-          
     wsLong.Cells(1, "F").Value = "MIN.AREA"
     wsLong.Cells(1, "K").Value = "MIN.PR.AM"
     wsLong.Cells(1, "M").Value = "MIN.COM"
@@ -131,36 +118,119 @@ Sub ProduceHQA()
     wsLong.Cells(1, "Q").Value = "1 BED"
     wsLong.Cells(1, "R").Value = "2 BED"
     wsLong.Cells(1, "S").Value = "3 BED"
-        
-    ' Apply Apartment Minimum Values and add the type to the matrix
-    
+    wsLong.Cells(1, "T").Value = "4 BED"
+
+    ' Apply color formatting & Standards based on unit type
     For i = 2 To lastRow
-        Select Case wsLong.Cells(i, "H")
-            Case "1"
-                wsLong.Cells(i, "F").Value = "45"    'set min apartment area
-                wsLong.Cells(i, "K").Value = "5"     'set min private open space area
-                'wsLong.Cells(i, "L").Value = "5"     'set actual private open space area
-                wsLong.Cells(i, "M").Value = "5"     'set min communal open space area
+        Set rng = wsLong.Range(wsLong.Cells(i, "A"), wsLong.Cells(i, "N"))
+        Dim unitType As String
+        unitType = wsLong.Cells(i, "D").Value
+
+
+        If InStr(1, unitType, "APT", vbTextCompare) > 0 Then
+            ' Case 1: APT
+            bedsSource = wsLong.Range("H" & i).Value
+            persSource = wsLong.Range("I" & i).Value
+            For iRef = 8 To 15
+                bedsRef = wsTemplate.Range("Q" & iRef).Value
+                persRef = wsTemplate.Range("R" & iRef).Value
+
+                If CLng(bedsRef) = CLng(bedsSource) And CLng(persRef) = CLng(persSource) Then
+
+
+                    rng.Interior.Color = wsTemplate.Cells(iRef, "S").Interior.Color             ' Set Colour
+                    wsLong.Range("F" & i).Value = wsTemplate.Range("T" & iRef).Value            'set min unit area
+                    If wsLong.Range("G" & i).Value < wsTemplate.Range("T" & iRef).Value Then
+                        wsLong.Range("G" & i).Interior.Color = RGB(255, 0, 0)
+                    End If
+
+                    wsLong.Range("K" & i).Value = wsTemplate.Range("Y" & iRef).Value            'set min private open space area
+                    If wsLong.Range("K" & i).Value < wsTemplate.Range("Y" & iRef).Value Then
+                        wsLong.Range("K" & i).Interior.Color = RGB(255, 0, 0)
+                    End If
+
+                    wsLong.Range("M" & i).Value = wsTemplate.Range("Z" & iRef).Value            'set min communal open space area
+
+
+
+                End If
                 
-                wsLong.Cells(i, "Q").Value = "1"     'set unit type tally
+            Next iRef
+
+        ElseIf InStr(1, unitType, "DUP", vbTextCompare) > 0 Then
+            ' Case 2: Duplex
+            bedsSource = wsLong.Range("H" & i).Value
+            persSource = wsLong.Range("I" & i).Value
+            For iRef = 17 To 25
+                bedsRef = wsTemplate.Range("Q" & iRef).Value
+                persRef = wsTemplate.Range("R" & iRef).Value
+
+                If CLng(bedsRef) = CLng(bedsSource) And CLng(persRef) = CLng(persSource) Then
+
+
+                    rng.Interior.Color = wsTemplate.Cells(iRef, "S").Interior.Color             ' Set Colour
+                    wsLong.Range("F" & i).Value = wsTemplate.Range("T" & iRef).Value            'set min unit area
+                    If wsLong.Range("G" & i).Value < wsTemplate.Range("T" & iRef).Value Then
+                        wsLong.Range("G" & i).Interior.Color = RGB(255, 0, 0)
+                    End If
+
+                    wsLong.Range("K" & i).Value = wsTemplate.Range("Y" & iRef).Value            'set min private open space area
+                    If wsLong.Range("K" & i).Value < wsTemplate.Range("Y" & iRef).Value Then
+                        wsLong.Range("K" & i).Interior.Color = RGB(255, 0, 0)
+                    End If
+
+                    wsLong.Range("M" & i).Value = wsTemplate.Range("Z" & iRef).Value            'set min communal open space area
+
+
+
+                End If
                 
-            Case "2"
-                wsLong.Cells(i, "F").Value = "73"    'set min apartment area
-                wsLong.Cells(i, "K").Value = "7"     'set min private open space area
-                'wsLong.Cells(i, "L").Value = "7"     'set actual private open space area
-                wsLong.Cells(i, "M").Value = "7"     'set min communal open space area
+            Next iRef
+
+        ElseIf InStr(1, unitType, "HOUSE", vbTextCompare) > 0 Then
+            ' Case 3: HOUSE
+            bedsSource = wsLong.Range("H" & i).Value
+            persSource = wsLong.Range("I" & i).Value
+            For iRef = 27 To 33
+                bedsRef = wsTemplate.Range("Q" & iRef).Value
+                persRef = wsTemplate.Range("R" & iRef).Value
+
+                If CLng(bedsRef) = CLng(bedsSource) And CLng(persRef) = CLng(persSource) Then
+
+
+                    rng.Interior.Color = wsTemplate.Cells(iRef, "S").Interior.Color             ' Set Colour
+                    wsLong.Range("F" & i).Value = wsTemplate.Range("T" & iRef).Value            'set min unit area
+                    If wsLong.Range("G" & i).Value < wsTemplate.Range("T" & iRef).Value Then
+                        wsLong.Range("G" & i).Interior.Color = RGB(255, 0, 0)
+                    End If
+
+                    wsLong.Range("K" & i).Value = wsTemplate.Range("Y" & iRef).Value            'set min private open space area
+                    If wsLong.Range("K" & i).Value < wsTemplate.Range("Y" & iRef).Value Then
+                        wsLong.Range("K" & i).Interior.Color = RGB(255, 0, 0)
+                    End If
+
+                    wsLong.Range("M" & i).Value = wsTemplate.Range("Z" & iRef).Value            'set min communal open space area
+
+
+                End If
                 
-                wsLong.Cells(i, "R").Value = "1"     'set unit type tally
+            Next iRef
+        End If
                 
-            Case "3"
-                wsLong.Cells(i, "F").Value = "90"    'set min apartment area
-                wsLong.Cells(i, "K").Value = "9"     'set min private open space area
-                'wsLong.Cells(i, "L").Value = "9"     'set actual private open space area
-                wsLong.Cells(i, "M").Value = "9"     'set min communal open space area
-                
-                wsLong.Cells(i, "S").Value = "1"     'set unit type tally
-        End Select
+        If (wsLong.Range("H" & i).Value = 1) Then
+            wsLong.Cells(i, "Q").Value = "1"     'set unit type tally
+        ElseIf (wsLong.Range("H" & i).Value = 2) Then
+            wsLong.Cells(i, "R").Value = "1"     'set unit type tally
+        ElseIf (wsLong.Range("H" & i).Value = 3) Then
+            wsLong.Cells(i, "S").Value = "1"     'set unit type tally
+        ElseIf (wsLong.Range("H" & i).Value = 4) Then
+            wsLong.Cells(i, "T").Value = "1"     'set unit type tally
+        End If
     Next i
+          
+
+        
+
     
         
     
@@ -303,26 +373,31 @@ Sub ProduceHQA()
     sumTypeColumns.Add "Q"
     sumTypeColumns.Add "R"
     sumTypeColumns.Add "S"
+    sumTypeColumns.Add "T"
     
     Dim sumTypeResultColumns As Collection
     Set sumTypeResultColumns = New Collection
-    sumTypeResultColumns.Add "T"
     sumTypeResultColumns.Add "U"
     sumTypeResultColumns.Add "V"
+    sumTypeResultColumns.Add "W"
+    sumTypeResultColumns.Add "X"
     
     Dim shortSumTypeColumns As Collection
     Set shortSumTypeColumns = New Collection
     shortSumTypeColumns.Add "C"
     shortSumTypeColumns.Add "D"
     shortSumTypeColumns.Add "E"
+    shortSumTypeColumns.Add "F"
     
     Dim percentCalcColumns As Collection
     Set percentCalcColumns = New Collection
     percentCalcColumns.Add "J"
     percentCalcColumns.Add "N"
-    percentCalcColumns.Add "T"
     percentCalcColumns.Add "U"
     percentCalcColumns.Add "V"
+    percentCalcColumns.Add "W"
+    percentCalcColumns.Add "X"
+    
     
     Dim sumColumns As Collection
     Set sumColumns = New Collection    'collection for columns to add
@@ -359,7 +434,7 @@ Sub ProduceHQA()
         currentLevel = wsLong.Cells(i, "C").Value
         currentBlock = wsLong.Cells(i, "B").Value
         
-        If currentLevel <> previousLevel Then
+        If currentLevel <> previousLevel Or currentBlock <> previousBlock Then
             
             'record change rows
             
@@ -374,7 +449,7 @@ Sub ProduceHQA()
              
             Call sumColumnsSub(wsLong, sumColumns, levelStartRow, i, 0, True) 'summing up the main stats
             
-            Call sumColumnsSub(wsLong, sumTypeColumns, levelStartRow, i, 3, False) 'summing up the apartment types and offsetting the result
+            Call sumColumnsSub(wsLong, sumTypeColumns, levelStartRow, i, 4, False) 'summing up the apartment types and offsetting the result
 
             'calculate %s~
             
@@ -399,7 +474,7 @@ Sub ProduceHQA()
             
             'link data to wsShort
             Call linkRow(wsLong, wsShort, sumColumns, i, iShort, 0) ' link the level summary row to the wsShort Schedule
-            Call linkRow(wsLong, wsShort, sumTypeResultColumns, i, iShort, -17)
+            Call linkRow(wsLong, wsShort, sumTypeResultColumns, i, iShort, -18)
             With wsShort.Cells(iShort, "B")
                 .Value = previousLevel
                 .Font.Bold = False
@@ -434,7 +509,7 @@ Sub ProduceHQA()
                     .Font.Name = "Calibri"
                 End With
                              
-                Call sumColumnsSub(wsLong, sumTypeColumns, blockStartRow, i, 3, False) 'summing up the apartment types and offsetting the result
+                Call sumColumnsSub(wsLong, sumTypeColumns, blockStartRow, i, 4, False) 'summing up the apartment types and offsetting the result
 
                 'calculate %s~
             
@@ -787,5 +862,37 @@ Function FormatDateWithSuffix(dt As Date) As String
     ' Build the final string
     FormatDateWithSuffix = dayNum & suffix & " " & Format(dt, "mmmm yyyy")
 End Function
+
+Function HEX(hexColor As String) As Long
+    Dim r As Integer, g As Integer, b As Integer
+
+    ' Remove "#" if it exists
+    If Left(hexColor, 1) = "#" Then
+        hexColor = Mid(hexColor, 2)
+    End If
+
+    ' Validate hex color length
+    If Len(hexColor) <> 6 Then
+        Err.Raise vbObjectError + 513, , "Invalid hex color format. Must be 6 characters like '#FF5733'."
+    End If
+
+    ' Convert hex to RGB
+    On Error GoTo ErrorHandler
+    r = CInt("&H" & Mid(hexColor, 1, 2))
+    g = CInt("&H" & Mid(hexColor, 3, 2))
+    b = CInt("&H" & Mid(hexColor, 5, 2))
+    HEX = RGB(r, g, b)
+    Exit Function
+
+ErrorHandler:
+    HEX = RGB(255, 255, 255) ' fallback to white on error
+    MsgBox "Invalid HEX color: " & hexColor, vbExclamation
+End Function
+
+
+
+
+
+
 
 
