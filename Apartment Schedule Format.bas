@@ -35,11 +35,6 @@ Sub ProduceHQA()
     Next ws
     
     Application.DisplayAlerts = True
-
-    
-    
-    
-    
     
     ' Set the original worksheet
     Set wsOriginal = ThisWorkbook.Sheets("sourceData") ' Change to your original sheet name if needed
@@ -75,8 +70,7 @@ Sub ProduceHQA()
     wsTemplate.Cells(5, 4).Value = FormatDateWithSuffix(Date)
     wsTemplate.Cells(14, 4).Value = FormatDateWithSuffix(Date)
     wsTemplate.Cells(24, 4).Value = FormatDateWithSuffix(Date)
-    
-    
+        
     'Delete columnd A and B
     wsLong.columns("A:B").Delete
     
@@ -198,24 +192,48 @@ Sub ProduceHQA()
    
     
     'find the last row
-    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+    lastRow = wsLong.Cells(wsLong.rows.Count, "E").End(xlUp).row
     
     '############################
     '## find unique unit types ##
     '############################
+    Dim reTypes As Object
+    Set reTypes = CreateObject("VBScript.RegExp")
+    
+    Dim regexPattern As String
+    
+    ' Read the cell
+    regexPattern = Trim(wsTemplate.Range("X3").Value)
+    
+    ' Check if empty and assign default
+    If Len(regexPattern) = 0 Then
+        regexPattern = ".*"    ' default regex: matches anything
+    End If
+    
+    ' Apply to your regex object
+    With reTypes
+        .Global = False
+        .IgnoreCase = True
+        .Pattern = regexPattern
+    End With
+
     
     For i = 2 To lastRow
         unitType = wsLong.Cells(i, 5).Value
-        
-        If Not IsEmpty(unitType) Then
-            If Not typeDict.Exists(unitType) = True Then
+    
+        If Len(unitType) > 0 And reTypes.Test(unitType) Then
+    
+            ' Use regex match as the dictionary key
+            unitKey = UCase(Trim(reTypes.Execute(unitType)(0)))
+    
+            If Not typeDict.Exists(unitKey) Then
                 ' Store count = 1 and first row = i
-                typeDict.Add unitType, Array(1, i)
+                typeDict.Add unitKey, Array(1, i)
             Else
                 ' Increment count
-                tempArr = typeDict(unitType)
+                tempArr = typeDict(unitKey)
                 tempArr(0) = tempArr(0) + 1
-                typeDict(unitType) = tempArr
+                typeDict(unitKey) = tempArr
             End If
         End If
     Next i
@@ -242,6 +260,8 @@ Sub ProduceHQA()
     
         ' overwrite column A with count (same as your original code)
         wsTypes.Cells(outputRow, 1).Value = typeItems(key)(0)
+        ' overwrite column E with combined unit type
+        wsTypes.Cells(outputRow, "E").Value = typeKeys(key)
     
         outputRow = outputRow + 1
     Next key
@@ -576,11 +596,27 @@ Sub ProduceHQA()
                 
                 Dim re As Object
                 Set re = CreateObject("VBScript.RegExp")
-                re.Pattern = "^\d?[A-Za-z]"
+                're.Pattern = "^\d?[A-Za-z]"
+                
+                ' Read the cell
+                regexPattern = Trim(wsTemplate.Range("X2").Value)
+                
+                ' Check if empty and assign default
+                If Len(regexPattern) = 0 Then
+                    regexPattern = ".*"    ' default regex: matches anything
+                End If
+                
+                ' Apply to your regex object
+                With re
+                    .Global = False
+                    .IgnoreCase = True
+                    .Pattern = regexPattern
+                End With
+
                 re.Global = False
                 
                 Dim o As Long
-                Dim unitKey As String
+                'Dim unitKey As String
                 Dim floorArea As Double
                 Dim aspect As Long
                 Dim amenityArea As Double
