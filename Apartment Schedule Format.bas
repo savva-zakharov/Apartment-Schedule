@@ -475,7 +475,7 @@ Sub ProduceHQA()
                 ' string matches 1–2 alphanumeric characters
                 levelTitle = "Block " & previousBlock & " Level " & previousLevel
             Else
-                levelTitle = previousBlock
+'                levelTitle = previousBlock
             End If
             
             
