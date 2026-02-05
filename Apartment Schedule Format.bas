@@ -1028,29 +1028,24 @@ Sub ProduceHQA()
     
     
     'copy the headers fropm wsTemplate
-    wsTemplate.rows("1:8").Copy
+    wsTemplate.Range("A1:N8").Copy
     wsLong.Range("A1").Insert Shift:=xlDown
+    wsTemplate.Range("BA1:BR8").Copy
+    wsLong.Range("O1").Insert Shift:=xlDown
     wsLong.rows("9:9").Delete
-    With wsLong.Range("O1:Z8")
-        .Clear
-        .Borders.LineStyle = xlNone
-    End With
     
-    wsTemplate.rows("10:17").Copy
+    wsTemplate.Range("A10:N17").Copy
     wsShort.Range("A1").Insert Shift:=xlDown
-    With wsShort.Range("O1:Z8")
-        .Clear
-        .Borders.LineStyle = xlNone
-    End With
+    wsTemplate.Range("BA1:BR8").Copy
+    wsShort.Range("S1").Insert Shift:=xlDown
 
-    wsTemplate.rows("29:36").Copy
+    wsTemplate.Range("A29:N36").Copy
     wsBlocks.Range("A1").Insert Shift:=xlDown
-    With wsBlocks.Range("O1:Z8")
-        .Clear
-        .Borders.LineStyle = xlNone
-    End With
+    wsTemplate.Range("BA1:BR8").Copy
+    wsBlocks.Range("O1").Insert Shift:=xlDown
     
-    With wsTypes.Range("O1:Z8")
+    With wsTypes.Range("O1:AB8")
+        .UnMerge
         .Clear
         .Borders.LineStyle = xlNone
     End With
@@ -1361,9 +1356,9 @@ End Sub
 
 Sub ImportTSV(filePath As String)
 
-    With ActiveSheet.QueryTables.Add( _
+    With wsSource.Add( _
         Connection:="TEXT;C:\Temp\data.txt", _
-        Destination:=Range("A1"))
+        Destination:=wsSource.Range("A1"))
 
         .TextFileTabDelimiter = True
         .TextFileParseType = xlDelimited
