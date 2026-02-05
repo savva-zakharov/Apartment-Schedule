@@ -1,10 +1,12 @@
+Option Explicit
+
 Function ColLetterToNumber(colLetter As String) As Long
     ColLetterToNumber = Range(colLetter & "1").Column
 End Function
 
 Sub ProduceHQA()
 
-    Dim wsOriginal As Worksheet
+    Dim wsSource As Worksheet
     Dim wsLong As Worksheet
     Dim wsShort As Worksheet
     Dim wsTypes As Worksheet
@@ -16,7 +18,7 @@ Sub ProduceHQA()
     Dim iBlocks As Long
     Dim currentLevel As Variant
     Dim previousLevel As Variant
-    
+    Dim filePath As String
     Dim typeDict As Object
 '    Dim blockDict As Object
     Set typeDict = CreateObject("Scripting.Dictionary")
@@ -26,6 +28,9 @@ Sub ProduceHQA()
     
     Dim ws As Worksheet
 
+    ' Optimize performance
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
     Application.DisplayAlerts = False
     
     For Each ws In ThisWorkbook.Worksheets
@@ -37,10 +42,46 @@ Sub ProduceHQA()
     Application.DisplayAlerts = True
     
     ' Set the original worksheet
-    Set wsOriginal = ThisWorkbook.Sheets("sourceData") ' Change to your original sheet name if needed
+    Set wsSource = ThisWorkbook.Sheets("sourceData") ' Change to your original sheet name if needed
     
     ' Set the tempalte worksheet
     Set wsTemplate = ThisWorkbook.Sheets("template") ' Change to your original sheet name if needed
+    
+    filePath = Trim(wsTemplate.Range("T5").Value)
+    
+    If Dir(filePath) = "" Then
+        MsgBox "File not found:" & vbCrLf & filePath, vbExclamation
+        Exit Sub
+    Else:
+        Application.ScreenUpdating = False
+        Application.DisplayAlerts = False
+        wsSource.Cells.Clear
+            ' Remove any existing QueryTables (important!)
+        Dim qt As QueryTable
+        For Each qt In wsSource.QueryTables
+            qt.Delete
+        Next qt
+        
+        With wsSource.QueryTables.Add( _
+            Connection:="TEXT;" & filePath, _
+            Destination:=wsSource.Range("A1"))
+
+            .TextFileParseType = xlDelimited
+            .TextFileTabDelimiter = True
+            .TextFileTextQualifier = xlTextQualifierDoubleQuote
+            .TextFileConsecutiveDelimiter = False
+            .AdjustColumnWidth = True
+            .Refresh BackgroundQuery:=False
+            .Delete ' remove query but keep data
+        End With
+        Application.DisplayAlerts = True
+        Application.ScreenUpdating = True
+        
+    End If
+    
+
+    
+    
     
     ' Create a new worksheet for the Long schedule output
     Set wsShort = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
@@ -63,7 +104,7 @@ Sub ProduceHQA()
     wsBlocks.Name = wsBlocks.Name & " Blocks " & currentDate
     
     ' Copy all data from the original worksheet to the new worksheet
-    wsOriginal.Cells.Copy Destination:=wsLong.Cells(1, 1)
+    wsSource.Cells.Copy Destination:=wsLong.Cells(1, 1)
     
     'Change the dates in the template
     
@@ -175,6 +216,9 @@ Sub ProduceHQA()
         End If
     
     Next i
+    
+    Dim areaExt
+    Dim areaCur
 
     'Add a +10% indicator to every row
     For i = 2 To lastRow
@@ -217,6 +261,9 @@ Sub ProduceHQA()
         .Pattern = regexPattern
     End With
 
+    Dim unitType
+    Dim unitKey
+    Dim tempArr
     
     For i = 2 To lastRow
         unitType = wsLong.Cells(i, 5).Value
@@ -248,6 +295,7 @@ Sub ProduceHQA()
     Dim typeItems As Variant
     typeItems = typeDict.Items
     
+    Dim key
     For key = LBound(typeKeys) To UBound(typeKeys)
     
         With wsTypes.rows(outputRow)
@@ -413,12 +461,39 @@ Sub ProduceHQA()
     'initiating the loop and strating parameters
     i = 5 'start on row 5
     iShort = 5 'start filling out wsShort on row 5
+
+    ' Initialize Regex objects outside the loop for performance
+    Dim re1 As Object
+    Set re1 = CreateObject("VBScript.RegExp")
+    With re1
+        .Pattern = "^[A-Za-z0-9]{1,2}$"
+        .IgnoreCase = True
+        .Global = False
+    End With
+    
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    ' Read the cell for block pattern
+    regexPattern = Trim(wsTemplate.Range("X2").Value)
+    If Len(regexPattern) = 0 Then
+        regexPattern = ".*"
+    End If
+    With re
+        .Global = False
+        .IgnoreCase = True
+        .Pattern = regexPattern
+    End With
+    
     
     Dim levelStartRow As Long
     Dim blockStartRow As Long
     
     
     Dim shortBlockStartRow As Long
+    
+
+    Dim previousBlock
+    Dim currentBlock
     
     previousLevel = wsLong.Cells(5, "C").Value 'take the initial level name
     previousBlock = wsLong.Cells(5, "B").Value 'take the initial block name
@@ -462,7 +537,6 @@ Sub ProduceHQA()
             ' Add title to floors
             
             Dim levelTitle As String
-            Dim re1 As Object
             Set re1 = CreateObject("VBScript.RegExp")
             
             With re1
@@ -572,9 +646,8 @@ Sub ProduceHQA()
                 Dim shortBlockRange As Range
                 
                 Set shortBlockRange = wsShort.Range(wsShort.Cells(iShort - 1, "A"), wsShort.Cells(shortBlockStartRow, "N"))
-                
-                
-                
+                              
+            
                 
                 '#########################
                 '## updates to wsBlocks ##
@@ -594,7 +667,6 @@ Sub ProduceHQA()
                 Dim blockDict As Object
                 Set blockDict = CreateObject("Scripting.Dictionary")
                 
-                Dim re As Object
                 Set re = CreateObject("VBScript.RegExp")
                 're.Pattern = "^\d?[A-Za-z]"
                 
@@ -1064,32 +1136,37 @@ Sub ProduceHQA()
     Application.CutCopyMode = False
     wsTypes.Range("A1").Select
     
-   
+    ' Restore application settings
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.DisplayAlerts = True
     
 End Sub
 
 
 Sub sumColumnsSub(ws As Worksheet, columns As Collection, startRow As Long, endRow As Long, colOffset As Long, Optional countFirst As Boolean = False)
-
-        For p = 1 To columns.Count
+        Dim P
+        For P = 1 To columns.Count
         
-        If p = 1 And countFirst = True Then
-        With ws.Cells(endRow, ColLetterToNumber(columns(p)) + colOffset)
-                .Formula = "=COUNTA(" & columns(p) & endRow - 1 & ":" & columns(p) & startRow & ")"
+        If P = 1 And countFirst = True Then
+        With ws.Cells(endRow, ColLetterToNumber(columns(P)) + colOffset)
+                .Formula = "=COUNTA(" & columns(P) & endRow - 1 & ":" & columns(P) & startRow & ")"
                 .Font.Bold = True
         End With
         Else
-        With ws.Cells(endRow, ColLetterToNumber(columns(p)) + colOffset)
-                .Formula = "=SUM(" & columns(p) & endRow - 1 & ":" & columns(p) & startRow & ")"
+        With ws.Cells(endRow, ColLetterToNumber(columns(P)) + colOffset)
+                .Formula = "=SUM(" & columns(P) & endRow - 1 & ":" & columns(P) & startRow & ")"
                 .Font.Bold = True
         End With
         End If
             
-        Next p
+        Next P
 End Sub
 
 Sub sumColumnsRowsSub(ws As Worksheet, columns As Collection, rows As Collection, i As Long)
-        For p = 1 To columns.Count
+        Dim P
+        Dim q
+        For P = 1 To columns.Count
        
        'Declare the formula and start writing it
        Dim blockFormulaString As String
@@ -1098,34 +1175,34 @@ Sub sumColumnsRowsSub(ws As Worksheet, columns As Collection, rows As Collection
        For q = 1 To rows.Count
            If q = rows.Count Then
                ' For the last item, don't add a comma after it
-               blockFormulaString = blockFormulaString & columns(p)
+               blockFormulaString = blockFormulaString & columns(P)
                blockFormulaString = blockFormulaString & rows(q) & ")"
            Else
                ' For all other items, add a comma between cell references
-               blockFormulaString = blockFormulaString & columns(p)
+               blockFormulaString = blockFormulaString & columns(P)
                blockFormulaString = blockFormulaString & rows(q) & ","
            End If
        Next q
        
        
-       ws.Range(columns(p) & i).Formula = blockFormulaString
+       ws.Range(columns(P) & i).Formula = blockFormulaString
     
-       Next p
+       Next P
 End Sub
 
 
 
 Sub percentColumnsSub(ws As Worksheet, columns As Collection, row As Long, colOffset As Long)
-
-        For p = 1 To columns.Count
+        Dim P
+        For P = 1 To columns.Count
         
-        With ws.Cells(row + 1, columns(p))
-            .Formula = "=" & columns(p) & row & "/A" & row
+        With ws.Cells(row + 1, columns(P))
+            .Formula = "=" & columns(P) & row & "/A" & row
             .Font.Bold = False
             .NumberFormat = "0%"
         End With
             
-        Next p
+        Next P
 End Sub
 
 Sub drawBorderThickOutline(rng As Range)
@@ -1169,6 +1246,7 @@ Sub drawBorderThickOutline(rng As Range)
 End Sub
 
 Sub drawBorderLine(ws As Worksheet, i As Long)
+    Dim rng
      Set rng = ws.Range(ws.Cells(i, "A"), ws.Cells(i, "N"))
     
      With rng.Borders(xlEdgeTop)
@@ -1182,12 +1260,13 @@ Sub drawBorderLine(ws As Worksheet, i As Long)
 End Sub
 
 Sub linkRow(wsSource As Worksheet, wsDestination As Worksheet, columns As Collection, rowSrc As Long, rowDest As Long, colOffset As Long)
-    For p = 1 To columns.Count
-        With wsDestination.Cells(rowDest, ColLetterToNumber(columns(p)) + colOffset)
-            .Formula = "='" & wsSource.Name & "'!" & columns(p) & rowSrc
+    Dim P
+    For P = 1 To columns.Count
+        With wsDestination.Cells(rowDest, ColLetterToNumber(columns(P)) + colOffset)
+            .Formula = "='" & wsSource.Name & "'!" & columns(P) & rowSrc
             .Font.Bold = False
         End With
-    Next p
+    Next P
 End Sub
 
 Function FormatDateWithSuffix(dt As Date) As String
@@ -1280,6 +1359,15 @@ Public Sub ApplyDwellingLookup( _
 
 End Sub
 
+Sub ImportTSV(filePath As String)
 
+    With ActiveSheet.QueryTables.Add( _
+        Connection:="TEXT;C:\Temp\data.txt", _
+        Destination:=Range("A1"))
 
+        .TextFileTabDelimiter = True
+        .TextFileParseType = xlDelimited
+        .Refresh
+    End With
 
+End Sub
