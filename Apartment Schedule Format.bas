@@ -166,16 +166,70 @@ Sub ProduceHQA()
     wsLong.Cells(1, "K").Value = "MIN.PR.AM"
     wsLong.Cells(1, "M").Value = "MIN.COM"
     wsLong.Cells(1, "N").Value = "10%+"
-    wsLong.Cells(1, "Q").Value = "1 BED"
-    wsLong.Cells(1, "R").Value = "2 BED"
-    wsLong.Cells(1, "S").Value = "3 BED"
 
+    ' DYNAMIC BEDROOM COLUMNS SETUP
+    Dim bedCountsDict As Object
+    Set bedCountsDict = CreateObject("Scripting.Dictionary")
+    Dim bVal As Variant
+    
+    ' Scan for unique bedroom counts
+    For i = 2 To lastRow
+        bVal = wsLong.Cells(i, "H").Value
+        If IsNumeric(bVal) And Len(bVal) > 0 Then
+             bVal = CDbl(bVal)
+             If Not bedCountsDict.Exists(bVal) Then bedCountsDict.Add bVal, bVal
+        End If
+    Next i
+    
+    ' Sort keys
+    Dim bedKeys As Variant
+    bedKeys = bedCountsDict.Keys
+    Dim b1 As Long, b2 As Long, tempB As Variant
+    For b1 = LBound(bedKeys) To UBound(bedKeys) - 1
+        For b2 = b1 + 1 To UBound(bedKeys)
+            If bedKeys(b1) > bedKeys(b2) Then
+                tempB = bedKeys(b1)
+                bedKeys(b1) = bedKeys(b2)
+                bedKeys(b2) = tempB
+            End If
+        Next b2
+    Next b1
+    
     Dim tally As Object
     Set tally = CreateObject("Scripting.Dictionary")
-    tally.Add 1, "Q"
-    tally.Add 2, "R"
-    tally.Add 3, "S"
-    tally.Add 4, "T"
+    
+    Dim sumTypeColumns As Collection: Set sumTypeColumns = New Collection
+    Dim sumTypeResultColumns As Collection: Set sumTypeResultColumns = New Collection
+    Dim shortSumTypeColumns As Collection: Set shortSumTypeColumns = New Collection
+    Dim percentCalcColumns As Collection: Set percentCalcColumns = New Collection
+    percentCalcColumns.Add "J"
+    percentCalcColumns.Add "N"
+    
+    Dim startColLong As Long: startColLong = 17 ' Q
+    Dim startColShort As Long: startColShort = 3 ' C
+    Dim colLet As String, resColLet As String, shortColLet As String
+    Dim bCount As Variant
+    
+    For b1 = LBound(bedKeys) To UBound(bedKeys)
+        bCount = bedKeys(b1)
+        
+        colLet = ColumnNumberToLetter(startColLong + b1)
+        tally.Add bCount, colLet
+        
+        wsLong.Cells(1, colLet).Value = bCount & " BED"
+        wsBlocks.Cells(1, colLet).Value = bCount & " BED"
+        
+        sumTypeColumns.Add colLet
+        
+        resColLet = ColumnNumberToLetter(startColLong + b1 + 4)
+        sumTypeResultColumns.Add resColLet
+        percentCalcColumns.Add resColLet
+        
+        shortColLet = ColumnNumberToLetter(startColShort + b1)
+        shortSumTypeColumns.Add shortColLet
+        wsShort.Cells(1, shortColLet).Value = bCount & " BED"
+    Next b1
+    
     Dim rng As Range
     
     '#################################
@@ -189,7 +243,7 @@ Sub ProduceHQA()
     
             ' HOUSES
             Case InStr(1, UCase(wsLong.Cells(i, "D").Value), "HOUSE") > 0
-                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "T27:T32", rng, tally)
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "T27:T33", rng, tally)
     
             ' DUPLEX
             Case InStr(1, UCase(wsLong.Cells(i, "D").Value), "DUPLEX") > 0 _
@@ -400,35 +454,6 @@ Sub ProduceHQA()
     'set up columnd to run summs on
     'wsLong columns
     
-    Dim sumTypeColumns As Collection
-    Set sumTypeColumns = New Collection
-    sumTypeColumns.Add "Q"
-    sumTypeColumns.Add "R"
-    sumTypeColumns.Add "S"
-    sumTypeColumns.Add "T"
-    
-    Dim sumTypeResultColumns As Collection
-    Set sumTypeResultColumns = New Collection
-    sumTypeResultColumns.Add "U"
-    sumTypeResultColumns.Add "V"
-    sumTypeResultColumns.Add "W"
-    sumTypeResultColumns.Add "X"
-    
-    Dim shortSumTypeColumns As Collection
-    Set shortSumTypeColumns = New Collection
-    shortSumTypeColumns.Add "C"
-    shortSumTypeColumns.Add "D"
-    shortSumTypeColumns.Add "E"
-    shortSumTypeColumns.Add "F"
-    
-    Dim percentCalcColumns As Collection
-    Set percentCalcColumns = New Collection
-    percentCalcColumns.Add "J"
-    percentCalcColumns.Add "N"
-    percentCalcColumns.Add "U"
-    percentCalcColumns.Add "V"
-    percentCalcColumns.Add "W"
-    percentCalcColumns.Add "X"
     
     Dim blocksSumColumns As Collection
     Set blocksSumColumns = New Collection
@@ -782,21 +807,13 @@ Sub ProduceHQA()
                         wsBlocks.Cells(iBlocks, 2).Value = "0%"
                     End If
                     
-                    Select Case wsBlocks.Cells(iBlocks, "H").Value
-
-                        Case "1"
-                            wsBlocks.Cells(iBlocks, "Q").Value = blockDict(blockKeys(key))(0)
-                
-                        Case "2"
-                            wsBlocks.Cells(iBlocks, "R").Value = blockDict(blockKeys(key))(0)
-                
-                        Case "3"
-                            wsBlocks.Cells(iBlocks, "S").Value = blockDict(blockKeys(key))(0)
-                
-                        Case Else
-                            wsBlocks.Cells(iBlocks, "T").Value = blockDict(blockKeys(key))(0)
-                
-                    End Select
+                    Dim bCountVal As Variant
+                    bCountVal = wsBlocks.Cells(iBlocks, "H").Value
+                    If IsNumeric(bCountVal) Then bCountVal = CDbl(bCountVal)
+                    
+                    If tally.Exists(bCountVal) Then
+                        wsBlocks.Cells(iBlocks, tally(bCountVal)).Value = blockDict(blockKeys(key))(0)
+                    End If
                     
 '                    With wsBlocks.Cells(iBlocks, "F")
 '                        .Value = wsBlocks.Cells(iBlocks, 7).Value * blockDict(blockKeys(key))(0)
@@ -1366,3 +1383,9 @@ Sub ImportTSV(filePath As String)
     End With
 
 End Sub
+
+Function ColumnNumberToLetter(iCol As Long) As String
+    Dim vArr
+    vArr = Split(Cells(1, iCol).Address(True, False), "$")
+    ColumnNumberToLetter = vArr(0)
+End Function
