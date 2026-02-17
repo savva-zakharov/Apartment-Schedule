@@ -42,14 +42,8 @@ Press alt + F8 and press run
 ![image](https://github.com/user-attachments/assets/87f2f436-6f11-408f-9b64-eb9897d9e562)
 
 
-The scrpit converts the sourve spreadsheet looking like this:
+The scrpit converts the source spreadsheet looking like this:
 
 ![image](https://github.com/user-attachments/assets/69c3aa9f-5315-4ba4-8017-7a7ef6982824)
 
 to a more user firendly format, broken down by floors and blocks:
-
-![image](https://github.com/user-attachments/assets/3bf667fe-ce2c-4456-8ba4-cf69134f33d9)
-
-
-You can modify the script to customise the results, e.g change the colours
-
