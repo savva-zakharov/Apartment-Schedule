@@ -147,7 +147,17 @@ Sub ProduceHQA()
     
     ' Recalculate the last row after deletions
     lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
-    
+
+    ' Delete rows containing XX in column F or G
+    For i = lastRow To 2 Step -1
+        If wsLong.Cells(i, "F").Value = "XX" Or wsLong.Cells(i, "G").Value = "XX" Then
+            wsLong.rows(i).Delete
+        End If
+    Next i
+
+    ' Recalculate last row after XX deletions
+    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+
     ' Move columns H, F, and G to A, B, and C respectively
     
         
