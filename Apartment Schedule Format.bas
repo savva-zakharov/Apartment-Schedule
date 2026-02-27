@@ -46,9 +46,14 @@ Sub ProduceHQA()
     
     ' Set the tempalte worksheet
     Set wsTemplate = ThisWorkbook.Sheets("template") ' Change to your original sheet name if needed
-    
+
     filePath = Trim(wsTemplate.Range("T5").Value)
     
+    ' Remove surrounding double quotes if present (tolerant of quoted paths)
+    If Left(filePath, 1) = """" And Right(filePath, 1) = """" Then
+        filePath = Mid(filePath, 2, Len(filePath) - 2)
+    End If
+
     If Dir(filePath) = "" Then
         MsgBox "File not found:" & vbCrLf & filePath, vbExclamation
         Exit Sub
@@ -61,13 +66,17 @@ Sub ProduceHQA()
         For Each qt In wsSource.QueryTables
             qt.Delete
         Next qt
-        
+
+        Dim isCsv As Boolean
+        isCsv = (LCase(Right(filePath, 4)) = ".csv")
+
         With wsSource.QueryTables.Add( _
             Connection:="TEXT;" & filePath, _
             Destination:=wsSource.Range("A1"))
 
             .TextFileParseType = xlDelimited
-            .TextFileTabDelimiter = True
+            .TextFileTabDelimiter = Not isCsv
+            .TextFileCommaDelimiter = isCsv
             .TextFileTextQualifier = xlTextQualifierDoubleQuote
             .TextFileConsecutiveDelimiter = False
             .AdjustColumnWidth = True
@@ -76,7 +85,7 @@ Sub ProduceHQA()
         End With
         Application.DisplayAlerts = True
         Application.ScreenUpdating = True
-        
+
     End If
     
 
@@ -100,51 +109,28 @@ Sub ProduceHQA()
     
     ' Create a new worksheet for the blocks summary
     Set wsBlocks = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
-    
+
     wsBlocks.Name = wsBlocks.Name & " Blocks " & currentDate
-    
-    ' Copy all data from the original worksheet to the new worksheet
-    wsSource.Cells.Copy Destination:=wsLong.Cells(1, 1)
-    
+
     'Change the dates in the template
-    
     wsTemplate.Cells(5, 4).Value = FormatDateWithSuffix(Date)
     wsTemplate.Cells(14, 4).Value = FormatDateWithSuffix(Date)
     wsTemplate.Cells(24, 4).Value = FormatDateWithSuffix(Date)
-        
-    'Delete columnd A and B
-    wsLong.columns("A:B").Delete
-    
+
+    ' Copy columns from wsSource to wsLong by matching headers
+    ' wsSource headers are in row 1, wsTemplate headers are in row 9 (A9:S9)
+    Call CopyColumnsByHeader(wsSource, wsLong, wsTemplate)
+
     ' Find the last used row in column C of the new sheet
     lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
-    
+
     ' Delete rows where column C equals 0
-    For i = lastRow To 2 Step -1 ' Start from the bottom to avoid skiplevelStartRowng rows
+    For i = lastRow To 2 Step -1 ' Start from the bottom to avoid skipping rows
         If wsLong.Cells(i, "D").Value = 0 Then
             wsLong.rows(i).Delete
         End If
     Next i
-    
-     ' Find the last row with data in column A (assuming columns A to H are populated)
-    lastRow = wsLong.Cells(wsLong.rows.Count, "A").End(xlUp).row
-    
-    ' Define the range of data you want to sort (A1 to K[lastRow])
-    With wsLong.Sort
-        .SortFields.Clear ' Clear any previous sort fields
-        
-        ' Sort by Column D (6th column), then by Column E (7th column), then by Column F (8th column)
-        .SortFields.Add key:=wsLong.Range("D2:D" & lastRow), Order:=xlAscending ' Column D
-        .SortFields.Add key:=wsLong.Range("E2:E" & lastRow), Order:=xlAscending ' Column E
-        .SortFields.Add key:=wsLong.Range("F2:F" & lastRow), Order:=xlAscending ' Column F
-        
-        ' Apply the sorting to the range from A1 to H[lastRow]
-        .SetRange wsLong.Range("A1:O" & lastRow)
-        
-        ' Apply the sort
-        .Header = xlYes ' Assuming your data includes headers
-        .Apply
-    End With
-    
+
     ' Recalculate the last row after deletions
     lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
 
@@ -158,20 +144,33 @@ Sub ProduceHQA()
     ' Recalculate last row after XX deletions
     lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
 
-    ' Move columns H, F, and G to A, B, and C respectively
-    
-        
-    wsLong.columns("F:F").Cut
-    wsLong.columns("A:A").Insert Shift:=xlToRight
-    wsLong.columns("E:E").Cut
-    wsLong.columns("B:B").Insert Shift:=xlToRight
-    wsLong.columns("F:F").Cut
-    wsLong.columns("C:C").Insert Shift:=xlToRight
-    wsLong.columns("O:O").Cut
-    wsLong.columns("F:F").Insert Shift:=xlToRight
+    ' Find the last row with data in column A
+    lastRow = wsLong.Cells(wsLong.rows.Count, "A").End(xlUp).row
+
+    ' Define the range of data you want to sort (A1 to K[lastRow])
+    With wsLong.Sort
+        .SortFields.Clear ' Clear any previous sort fields
+
+        ' Sort by Column D (6th column), then by Column E (7th column), then by Column F (8th column)
+        .SortFields.Add key:=wsLong.Range("D2:D" & lastRow), Order:=xlAscending ' Column D
+        .SortFields.Add key:=wsLong.Range("E2:E" & lastRow), Order:=xlAscending ' Column E
+        .SortFields.Add key:=wsLong.Range("F2:F" & lastRow), Order:=xlAscending ' Column F
+
+        ' Apply the sorting to the range from A1 to H[lastRow]
+        .SetRange wsLong.Range("A1:O" & lastRow)
+
+        ' Apply the sort
+        .Header = xlYes ' Assuming your data includes headers
+        .Apply
+    End With
+
+    ' Recalculate the last row after deletions
+    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+
+    ' Copy MIN.PR.AM column (K) to column L
     wsLong.columns("K:K").Copy
     wsLong.columns("L:L").PasteSpecial Paste:=xlPasteAll
-    
+
     wsLong.Cells(1, "F").Value = "MIN.AREA"
     wsLong.Cells(1, "K").Value = "MIN.PR.AM"
     wsLong.Cells(1, "M").Value = "MIN.COM"
@@ -1392,6 +1391,47 @@ Sub ImportTSV(filePath As String)
         .Refresh
     End With
 
+End Sub
+
+Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, wsTemplate As Worksheet)
+    ' Copy columns from wsSource to wsDest by matching headers
+    ' wsSource headers are in row 1
+    ' wsTemplate headers are in row 9 (A9:S9) - these define the target column order
+    ' wsDest will receive the data in the same column positions as wsTemplate
+    
+    Dim srcLastCol As Long
+    Dim srcLastRow As Long
+    Dim targetCol As Long
+    Dim srcCol As Long
+    Dim headerName As String
+    Dim foundCell As Range
+    Dim targetHeaderRange As Range
+    
+    ' Get the last used column and row in wsSource row 1
+    srcLastCol = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
+    srcLastRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    
+    ' Define the target header range in wsTemplate (A9:S9)
+    Set targetHeaderRange = wsTemplate.Range("A9:S9")
+    
+    ' Loop through each target column in wsTemplate row 9
+    For targetCol = 1 To targetHeaderRange.Columns.Count
+        headerName = Trim(UCase(wsTemplate.Cells(9, targetCol).Value))
+        
+        If Len(headerName) > 0 Then
+            ' Search for this header in wsSource row 1
+            For srcCol = 1 To srcLastCol
+                If UCase(Trim(wsSource.Cells(1, srcCol).Value)) = headerName Then
+                    ' Found match - copy the entire column (data only, from row 2 onwards)
+                    wsSource.Range(wsSource.Cells(2, srcCol), wsSource.Cells(srcLastRow, srcCol)).Copy _
+                        Destination:=wsDest.Cells(2, targetCol)
+                    ' Copy the header as well
+                    wsDest.Cells(1, targetCol).Value = wsSource.Cells(1, srcCol).Value
+                    Exit For
+                End If
+            Next srcCol
+        End If
+    Next targetCol
 End Sub
 
 Function ColumnNumberToLetter(iCol As Long) As String
