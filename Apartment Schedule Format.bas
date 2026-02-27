@@ -4,6 +4,35 @@ Function ColLetterToNumber(colLetter As String) As Long
     ColLetterToNumber = Range(colLetter & "1").Column
 End Function
 
+' Helper function to get column number from header name using the header map
+Function GetColByHeader(headerMap As Object, headerName As String) As Long
+    If headerMap.Exists(UCase(headerName)) Then
+        GetColByHeader = headerMap(UCase(headerName))
+    Else
+        GetColByHeader = 0
+    End If
+End Function
+
+' Build a dictionary mapping uppercase header names to column numbers
+Function BuildHeaderMap(ws As Worksheet, headerRow As Long) As Object
+    Dim headerMap As Object
+    Set headerMap = CreateObject("Scripting.Dictionary")
+    
+    Dim col As Long
+    Dim headerName As String
+    
+    For col = 1 To ws.columns.Count
+        If ws.Cells(headerRow, col).Value <> "" Then
+            headerName = UCase(Trim(ws.Cells(headerRow, col).Value))
+            headerMap.Add headerName, col
+        Else
+            Exit For
+        End If
+    Next col
+    
+    Set BuildHeaderMap = headerMap
+End Function
+
 Sub ProduceHQA()
 
     Dim wsSource As Worksheet
@@ -47,7 +76,7 @@ Sub ProduceHQA()
     ' Set the tempalte worksheet
     Set wsTemplate = ThisWorkbook.Sheets("template") ' Change to your original sheet name if needed
 
-    filePath = Trim(wsTemplate.Range("T5").Value)
+    filePath = Trim(wsTemplate.Range("AA5").Value)
     
     ' Remove surrounding double quotes if present (tolerant of quoted paths)
     If Left(filePath, 1) = """" And Right(filePath, 1) = """" Then
@@ -121,6 +150,10 @@ Sub ProduceHQA()
     ' wsSource headers are in row 1, wsTemplate headers are in row 9 (A9:S9)
     Call CopyColumnsByHeader(wsSource, wsLong, wsTemplate)
 
+    ' Build header map for wsLong (header row = 1)
+    Dim headerMap As Object
+    Set headerMap = BuildHeaderMap(wsTemplate, 9)
+
     ' Find the last used row in column C of the new sheet
     lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
 
@@ -147,16 +180,28 @@ Sub ProduceHQA()
     ' Find the last row with data in column A
     lastRow = wsLong.Cells(wsLong.rows.Count, "A").End(xlUp).row
 
-    ' Define the range of data you want to sort (A1 to K[lastRow])
+    ' Get column numbers for ZONE, BLOK, and LEVL headers using the header map
+    Dim zoneCol As Long, blokCol As Long, levelCol As Long
+    zoneCol = GetColByHeader(headerMap, "ZONE")
+    blokCol = GetColByHeader(headerMap, "BLOK")
+    levelCol = GetColByHeader(headerMap, "LEVL")
+
+    ' Define the range of data you want to sort (A1 to O[lastRow])
     With wsLong.Sort
         .SortFields.Clear ' Clear any previous sort fields
 
-        ' Sort by Column D (6th column), then by Column E (7th column), then by Column F (8th column)
-        .SortFields.Add key:=wsLong.Range("D2:D" & lastRow), Order:=xlAscending ' Column D
-        .SortFields.Add key:=wsLong.Range("E2:E" & lastRow), Order:=xlAscending ' Column E
-        .SortFields.Add key:=wsLong.Range("F2:F" & lastRow), Order:=xlAscending ' Column F
+        ' Sort by ZONE > BLOK > LEVL (in that order)
+        If zoneCol > 0 Then
+            .SortFields.Add key:=wsLong.Range(wsLong.Cells(2, zoneCol), wsLong.Cells(lastRow, zoneCol)), Order:=xlAscending
+        End If
+        If blokCol > 0 Then
+            .SortFields.Add key:=wsLong.Range(wsLong.Cells(2, blokCol), wsLong.Cells(lastRow, blokCol)), Order:=xlAscending
+        End If
+        If levelCol > 0 Then
+            .SortFields.Add key:=wsLong.Range(wsLong.Cells(2, levelCol), wsLong.Cells(lastRow, levelCol)), Order:=xlAscending
+        End If
 
-        ' Apply the sorting to the range from A1 to H[lastRow]
+        ' Apply the sorting to the range from A1 to O[lastRow]
         .SetRange wsLong.Range("A1:O" & lastRow)
 
         ' Apply the sort
@@ -167,14 +212,10 @@ Sub ProduceHQA()
     ' Recalculate the last row after deletions
     lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
 
-    ' Copy MIN.PR.AM column (K) to column L
-    wsLong.columns("K:K").Copy
-    wsLong.columns("L:L").PasteSpecial Paste:=xlPasteAll
-
-    wsLong.Cells(1, "F").Value = "MIN.AREA"
-    wsLong.Cells(1, "K").Value = "MIN.PR.AM"
-    wsLong.Cells(1, "M").Value = "MIN.COM"
-    wsLong.Cells(1, "N").Value = "10%+"
+    ' wsLong.Cells(1, "F").Value = "MIN.AREA"
+    ' wsLong.Cells(1, "K").Value = "MIN.PR.AM"
+    ' wsLong.Cells(1, "M").Value = "MIN.COM"
+    ' wsLong.Cells(1, "N").Value = "10%+"
 
     ' DYNAMIC BEDROOM COLUMNS SETUP
     Dim bedCountsDict As Object
@@ -183,7 +224,7 @@ Sub ProduceHQA()
     
     ' Scan for unique bedroom counts
     For i = 2 To lastRow
-        bVal = wsLong.Cells(i, "H").Value
+        bVal = wsLong.Cells(i, headerMap("BEDS")).Value
         If IsNumeric(bVal) And Len(bVal) > 0 Then
              bVal = CDbl(bVal)
              If Not bedCountsDict.Exists(bVal) Then bedCountsDict.Add bVal, bVal
@@ -211,8 +252,8 @@ Sub ProduceHQA()
     Dim sumTypeResultColumns As Collection: Set sumTypeResultColumns = New Collection
     Dim shortSumTypeColumns As Collection: Set shortSumTypeColumns = New Collection
     Dim percentCalcColumns As Collection: Set percentCalcColumns = New Collection
-    percentCalcColumns.Add "J"
-    percentCalcColumns.Add "N"
+    percentCalcColumns.Add headerMap("min10")
+    percentCalcColumns.Add headerMap("DUAL")
     
     Dim startColLong As Long: startColLong = 17 ' Q
     Dim startColShort As Long: startColShort = 3 ' C
@@ -222,7 +263,7 @@ Sub ProduceHQA()
     For b1 = LBound(bedKeys) To UBound(bedKeys)
         bCount = bedKeys(b1)
         
-        colLet = ColumnNumberToLetter(startColLong + b1)
+        colLet = startColLong + b1
         tally.Add bCount, colLet
         
         wsLong.Cells(1, colLet).Value = bCount & " BED"
@@ -230,11 +271,11 @@ Sub ProduceHQA()
         
         sumTypeColumns.Add colLet
         
-        resColLet = ColumnNumberToLetter(startColLong + b1 + 4)
+        resColLet = startColLong + b1 + 4
         sumTypeResultColumns.Add resColLet
         percentCalcColumns.Add resColLet
         
-        shortColLet = ColumnNumberToLetter(startColShort + b1)
+        shortColLet = startColShort + b1
         shortSumTypeColumns.Add shortColLet
         wsShort.Cells(1, shortColLet).Value = bCount & " BED"
     Next b1
@@ -244,57 +285,86 @@ Sub ProduceHQA()
     '#################################
     '## APPLY COLOURS AND STANDARDS ##
     '#################################
-    
+    Dim minAreaCol As Long
+    minAreaCol = GetColByHeader(headerMap, "minAREA")
+    Dim descCol As Long
+    descCol = GetColByHeader(headerMap, "BEDTYPE")
+    Dim areaCol As Long
+    areaCol = GetColByHeader(headerMap, "GIFA")
+    Dim pasCol As Long
+    pasCol = GetColByHeader(headerMap, "PAS")
+    Dim minPasCol As Long
+    minPasCol = GetColByHeader(headerMap, "minPAS")
+
+    if headerMap.Exists("minAREA") Then
+        wsLong.Cells(1, minAreaCol).Value = "minAREA"
+    End If
+    if headerMap.Exists("minPAS") Then
+        wsLong.Cells(1, minPasCol).Value = "minPAS"
+    End If
+    if headerMap.Exists("minCAS") Then
+        wsLong.Cells(1, areaCol).Value = "minCAS"
+    End If
+
     For i = 2 To lastRow
-        Set rng = wsLong.Range(wsLong.Cells(i, "A"), wsLong.Cells(i, "N"))
+        Set rng = wsLong.Range(wsLong.Cells(i, "A"), wsLong.Cells(i, "O"))
     
         Select Case True
     
             ' HOUSES
-            Case InStr(1, UCase(wsLong.Cells(i, "D").Value), "HOUSE") > 0
-                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "T27:T33", rng, tally)
+            Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "HOUSE") > 0
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA27:AA33", rng, tally, headerMap)
     
             ' DUPLEX
-            Case InStr(1, UCase(wsLong.Cells(i, "D").Value), "DUPLEX") > 0 _
-              Or InStr(1, UCase(wsLong.Cells(i, "D").Value), "DUP") > 0
-                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "T17:T22", rng, tally)
+            Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "DUPLEX") > 0 _
+              Or InStr(1, UCase(wsLong.Cells(i, descCol).Value), "DUP") > 0
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA17:AA22", rng, tally, headerMap)
     
             ' APARTMENTS
-            Case InStr(1, UCase(wsLong.Cells(i, "D").Value), "APARTMENT") > 0 _
-              Or InStr(1, UCase(wsLong.Cells(i, "D").Value), "APT") > 0
-                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "T8:T13", rng, tally)
+            Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "APARTMENT") > 0 _
+              Or InStr(1, UCase(wsLong.Cells(i, descCol).Value), "APT") > 0
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA8:AA13", rng, tally, headerMap)
     
         End Select
     
         ' COMPLIANCE CHECK – cell-level only
-    
-        If Val(wsLong.Cells(i, "G").Value) < Val(wsLong.Cells(i, "F").Value) _
-           And Val(wsLong.Cells(i, "F").Value) > 0 Then
-            wsLong.Cells(i, "G").Interior.Color = RGB(255, 0, 0)
+        
+        ' GFA CHECK - check that the floor area matches the minimum area requirement for the unit type
+        If Val(wsLong.Cells(i, minAreaCol).Value) > Val(wsLong.Cells(i, areaCol).Value) _
+           And Val(wsLong.Cells(i, headerMap("GIFA")).Value) > 0 Then
+            wsLong.Cells(i, minAreaCol).Interior.Color = RGB(255, 0, 0)
         End If
-    
-        If Val(wsLong.Cells(i, "L").Value) < Val(wsLong.Cells(i, "K").Value) _
-           And Val(wsLong.Cells(i, "K").Value) > 0 Then
-            wsLong.Cells(i, "L").Interior.Color = RGB(255, 0, 0)
-        End If
-    
-    Next i
-    
-    Dim areaExt
-    Dim areaCur
 
-    'Add a +10% indicator to every row
-    For i = 2 To lastRow
-         areaExt = wsLong.Cells(i, "F").Value * 1.1
-         areaCur = wsLong.Cells(i, "G").Value
-         
-         If areaCur > areaExt Then
-            wsLong.Cells(i, "N").Value = "1"
-         Else
-            wsLong.Cells(i, "N").Value = "0"
-         End If
+        ' PRIVATE AMENITY AREA CHECK - check that the amenity area meets the minimum requirement for the unit type
+        If Val(wsLong.Cells(i, pasCol).Value) < Val(wsLong.Cells(i, minPasCol).Value) _
+           And Val(wsLong.Cells(i, minPasCol).Value) > 0 Then
+            wsLong.Cells(i, pasCol).Interior.Color = RGB(255, 0, 0)
+        End If
     
-    Next i
+    Next i  
+    
+    If headerMap.Exists("GIFA") And headerMap.Exists("min10") Then
+     
+        Dim areaExt
+        Dim areaCur
+        Dim min10Col As Long
+        min10Col = GetColByHeader(headerMap, "min10")
+        wsLong.Cells(1, min10Col).Value = "min10"
+        
+        'Add a +10% indicator to every row
+        
+        For i = 2 To lastRow
+            areaExt = wsLong.Cells(i, minAreaCol).Value * 1.1
+            areaCur = wsLong.Cells(i, areaCol).Value
+            
+            If areaCur > areaExt Then
+                wsLong.Cells(i, min10Col).Value = "1"
+            Else
+                wsLong.Cells(i, min10Col).Value = "0"
+            End If
+        
+        Next i
+    End If
     
    
     
@@ -455,10 +525,18 @@ Sub ProduceHQA()
     Set changeLevel = New Collection    'collection for tracking level changes
     Dim changeBlock As Collection
     Set changeBlock = New Collection    'collection for tracking block changes
-    Dim shortChangeBlock As Collection  'collection for tracking block changes in the wsShort Schedule
-    Set shortChangeBlock = New Collection
-    Dim blocksChangeBlock As Collection 'collection for tracking block changes in the wsBlocks Schedule
-    Set blocksChangeBlock = New Collection
+    Dim changeZone As Collection
+    Set changeZone = New Collection     'collection for tracking zone changes
+
+    Dim shortChangeBlock As Collection  
+    Set shortChangeBlock = New Collection 'collection for tracking block changes in the wsShort Schedule
+    Dim shortChangeZone As Collection
+    Set shortChangeZone = New Collection 'collection for tracking zone changes in the wsShort Schedule
+
+    Dim blocksChangeBlock As Collection 
+    Set blocksChangeBlock = New Collection 'collection for tracking block changes in the wsBlocks Schedule
+    Dim blocksChangeZone As Collection
+    Set blocksChangeZone = New Collection 'collection for tracking zone changes in the wsBlocks Schedule
     
     'set up columnd to run summs on
     'wsLong columns
@@ -466,31 +544,31 @@ Sub ProduceHQA()
     
     Dim blocksSumColumns As Collection
     Set blocksSumColumns = New Collection
-    blocksSumColumns.Add "A"
-    blocksSumColumns.Add "F"
-    blocksSumColumns.Add "H"
-    blocksSumColumns.Add "I"
-    blocksSumColumns.Add "J"
-    blocksSumColumns.Add "K"
-    blocksSumColumns.Add "L"
-    blocksSumColumns.Add "M"
-    blocksSumColumns.Add "N"
-    
+    blocksSumColumns.Add GetColByHeader(headerMap,"No")
+    blocksSumColumns.Add GetColByHeader(headerMap,"GIFA")
+    blocksSumColumns.Add GetColByHeader(headerMap,"minAREA")
+    blocksSumColumns.Add GetColByHeader(headerMap,"BEDS")
+    blocksSumColumns.Add GetColByHeader(headerMap,"PERS")
+    blocksSumColumns.Add GetColByHeader(headerMap,"DUAL")
+    blocksSumColumns.Add GetColByHeader(headerMap,"minPAS")
+    blocksSumColumns.Add GetColByHeader(headerMap,"PAS")
+    blocksSumColumns.Add GetColByHeader(headerMap,"minCAS")
+    blocksSumColumns.Add GetColByHeader(headerMap,"min10")    
     
     Dim sumColumns As Collection
     Set sumColumns = New Collection    'collection for columns to add
     
     'set up which columnds need to be summed, first columnd will use COUNTA instead if last comment is set to TRUE
-    sumColumns.Add "A"
-    sumColumns.Add "F"
-    sumColumns.Add "G"
-    sumColumns.Add "H"
-    sumColumns.Add "I"
-    sumColumns.Add "J"
-    sumColumns.Add "K"
-    sumColumns.Add "L"
-    sumColumns.Add "M"
-    sumColumns.Add "N"
+    sumColumns.Add GetColByHeader(headerMap,"No")
+    sumColumns.Add GetColByHeader(headerMap,"GIFA")
+    sumColumns.Add GetColByHeader(headerMap,"minAREA")
+    sumColumns.Add GetColByHeader(headerMap,"BEDS")
+    sumColumns.Add GetColByHeader(headerMap,"PERS")
+    sumColumns.Add GetColByHeader(headerMap,"DUAL")
+    sumColumns.Add GetColByHeader(headerMap,"minPAS")
+    sumColumns.Add GetColByHeader(headerMap,"PAS")
+    sumColumns.Add GetColByHeader(headerMap,"minCAS")
+    sumColumns.Add GetColByHeader(headerMap,"min10")
     
     'initiating the loop and strating parameters
     i = 5 'start on row 5
@@ -521,28 +599,37 @@ Sub ProduceHQA()
     
     Dim levelStartRow As Long
     Dim blockStartRow As Long
-    
-    
+    Dim zoneStartRow As Long
     Dim shortBlockStartRow As Long
     
-
+    Dim currentZone
+    Dim previousZone
     Dim previousBlock
     Dim currentBlock
+
+    ' Dim levelCol As Long
+    ' levelCol = GetColByHeader(headerMap,"LEVEL")
+    ' Dim blockCol As Long   
+    ' blockCol = GetColByHeader(headerMap,"BLOCK")
+    ' Dim zoneCol As Long
+    ' zoneCol = GetColByHeader(headerMap,"ZONE")
     
-    previousLevel = wsLong.Cells(5, "C").Value 'take the initial level name
-    previousBlock = wsLong.Cells(5, "B").Value 'take the initial block name
+    previousLevel = wsLong.Cells(5, GetColByHeader(headerMap,"LEVL")).Value 'take the initial level name
+    previousBlock = wsLong.Cells(5, GetColByHeader(headerMap,"BLOK")).Value 'take the initial block name
+    previousZone = wsLong.Cells(5, GetColByHeader(headerMap,"ZONE")).Value 'take the initial zone name
     levelStartRow = 5 'take the initial level start postion
     blockStartRow = 5 'take the initial block start postion
+    zoneStartRow = 5 'take the initial zone start postion
     shortBlockStartRow = 5
     
     Do While True
-        currentLevel = wsLong.Cells(i, "C").Value
-        currentBlock = wsLong.Cells(i, "B").Value
+        currentLevel = wsLong.Cells(i, GetColByHeader(headerMap,"LEVL")).Value
+        currentBlock = wsLong.Cells(i, GetColByHeader(headerMap,"BLOK")).Value
+        currentZone = wsLong.Cells(i, GetColByHeader(headerMap,"ZONE")).Value
         
-        If currentLevel <> previousLevel Or currentBlock <> previousBlock Then
+        If currentLevel <> previousLevel Or currentBlock <> previousBlock Or currentZone <> previousZone Then
             
-            'record change rows
-            
+            'record change rows          
           
             ' Insert 3 empty rows
             wsLong.rows(i).Resize(3).Insert Shift:=xlDown
@@ -604,8 +691,7 @@ Sub ProduceHQA()
                 .Font.Bold = False
             End With
             
-            iShort = iShort + 1
-            
+            iShort = iShort + 1          
                        
                         
             changeLevel.Add i
@@ -657,6 +743,24 @@ Sub ProduceHQA()
                     Call percentColumnsSub(wsLong, percentCalcColumns, i, 0)
                                     
                     Call sumColumnsRowsSub(wsLong, sumColumns, changeLevel, i)
+
+                    if currentZone <> previousZone Then
+                        i = i + 3 ' insert extra row if zone is also changing
+                        wsLong.rows(i).Resize(3).Insert Shift:=xlDown
+                        changeZone.Add i
+                        Call drawBorderLine(wsLong, i)     ' add summary line
+                        With wsLong.Cells(i - 1, "B")
+                            .Value = "Zone " & previousZone & " Summary"
+                            .Font.Bold = True
+                            .Font.Color = RGB(0, 176, 240)
+                            .Font.Name = "Calibri"
+                            .HorizontalAlignment = xlLeft
+                        End With
+                    
+                        Call sumColumnsRowsSub(wsLong, sumColumns, changeZone, i)
+                    End If
+
+
                 Else
                     changeBlock.Add i
                 End If
@@ -720,32 +824,39 @@ Sub ProduceHQA()
                 End With
 
                 re.Global = False
-                
+
                 Dim o As Long
                 'Dim unitKey As String
                 Dim floorArea As Double
                 Dim aspect As Long
                 Dim amenityArea As Double
                 
+                ' Cache column numbers using header map
+                Dim typeCol As Long, gifaCol As Long, dualCol As Long, casCol As Long
+                typeCol = GetColByHeader(headerMap, "TYPE")
+                gifaCol = GetColByHeader(headerMap, "GIFA")
+                dualCol = GetColByHeader(headerMap, "DUAL")
+                casCol = GetColByHeader(headerMap, "CAS")
+
                 For o = blockStartRow To blockEndRow
-                    unitType = wsLong.Cells(o, 5).Value
+                    unitType = wsLong.Cells(o, typeCol).Value
                     floorArea = 0
                     amenityArea = 0
                     aspect = 0
-                
-                    If IsNumeric(wsLong.Cells(o, "G").Value) Then
-                        floorArea = wsLong.Cells(o, "G").Value
+
+                    If gifaCol > 0 And IsNumeric(wsLong.Cells(o, gifaCol).Value) Then
+                        floorArea = wsLong.Cells(o, gifaCol).Value
                     End If
-                    If IsNumeric(wsLong.Cells(o, "J").Value) Then
-                        aspect = wsLong.Cells(o, "J").Value
+                    If dualCol > 0 And IsNumeric(wsLong.Cells(o, dualCol).Value) Then
+                        aspect = wsLong.Cells(o, dualCol).Value
                     End If
-                    If IsNumeric(wsLong.Cells(o, "L").Value) Then
-                        amenityArea = wsLong.Cells(o, "L").Value
+                    If pasCol > 0 And IsNumeric(wsLong.Cells(o, pasCol).Value) Then
+                        amenityArea = wsLong.Cells(o, pasCol).Value
                     End If
-                
+
                     If Len(unitType) > 0 And re.Test(unitType) Then
                         unitKey = UCase(Trim(re.Execute(unitType)(0)))
-                
+
                         If Not blockDict.Exists(unitKey) Then
                             ' count, first row, total floor area
                             blockDict.Add unitKey, Array(1, o, floorArea, aspect, amenityArea)
@@ -1170,15 +1281,15 @@ Sub sumColumnsSub(ws As Worksheet, columns As Collection, startRow As Long, endR
         For P = 1 To columns.Count
         
         If P = 1 And countFirst = True Then
-        With ws.Cells(endRow, ColLetterToNumber(columns(P)) + colOffset)
-                .Formula = "=COUNTA(" & columns(P) & endRow - 1 & ":" & columns(P) & startRow & ")"
-                .Font.Bold = True
-        End With
+            With ws.Cells(endRow, columns(P) + colOffset)
+                    .Formula = "=COUNTA(" & columns(P) & endRow - 1 & ":" & columns(P) & startRow & ")"
+                    .Font.Bold = True
+            End With
         Else
-        With ws.Cells(endRow, ColLetterToNumber(columns(P)) + colOffset)
-                .Formula = "=SUM(" & columns(P) & endRow - 1 & ":" & columns(P) & startRow & ")"
-                .Font.Bold = True
-        End With
+            With ws.Cells(endRow, columns(P) + colOffset)
+                    .Formula = "=SUM(" & columns(P) & endRow - 1 & ":" & columns(P) & startRow & ")"
+                    .Font.Bold = True
+            End With
         End If
             
         Next P
@@ -1340,7 +1451,8 @@ Public Sub ApplyDwellingLookup( _
     rowNum As Long, _
     lookupRange As String, _
     rngRow As Range, _
-    tallyMap As Object _
+    tallyMap As Object, _
+    headerMap As Object _
 )
 
     Dim bedCount As Long
@@ -1349,8 +1461,8 @@ Public Sub ApplyDwellingLookup( _
     Dim foundRow As Range
     Dim tallyCol As String
 
-    bedCount = wsData.Cells(rowNum, "H").Value
-    personCount = wsData.Cells(rowNum, "I").Value
+    bedCount = wsData.Cells(rowNum, headerMap("BEDS")).Value
+    personCount = wsData.Cells(rowNum, headerMap("PERS")).Value
 
     lookupKey = bedCount & "b " & personCount & "p"
 
@@ -1365,12 +1477,18 @@ Public Sub ApplyDwellingLookup( _
     End If
 
     ' Apply template colour
-    rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, "U").Interior.Color
+    rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, "AB").Interior.Color
 
     ' Set minimums
-    wsData.Cells(rowNum, "F").Value = wsTemplate.Cells(foundRow.row, "V").Value ' Min Area
-    wsData.Cells(rowNum, "K").Value = wsTemplate.Cells(foundRow.row, "W").Value ' Min PAS
-    wsData.Cells(rowNum, "M").Value = wsTemplate.Cells(foundRow.row, "X").Value ' Min CAS
+    If headerMap.Exists("MINAREA") Then
+        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.row, "AC").Value ' Min Area
+    End If
+    If headerMap.Exists("MINPAS") Then
+        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.row, "AD").Value ' Min PAS
+    End If
+    If headerMap.Exists("MINCAS") Then
+        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, "AE").Value ' Min CAS
+    End If
 
     ' Tally
     If tallyMap.Exists(bedCount) Then
@@ -1398,38 +1516,38 @@ Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, wsTemplate A
     ' wsSource headers are in row 1
     ' wsTemplate headers are in row 9 (A9:S9) - these define the target column order
     ' wsDest will receive the data in the same column positions as wsTemplate
-    
-    Dim srcLastCol As Long
+
     Dim srcLastRow As Long
     Dim targetCol As Long
-    Dim srcCol As Long
-    Dim headerName As String
-    Dim foundCell As Range
+    Dim srcHeaderMap As Object
     Dim targetHeaderRange As Range
-    
-    ' Get the last used column and row in wsSource row 1
-    srcLastCol = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
-    srcLastRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
-    
+    Dim headerName As String
+    Dim srcCol As Long
+
+    ' Get the last used row in wsSource
+    srcLastRow = wsSource.Cells(wsSource.rows.Count, 1).End(xlUp).row
+
+    ' Build header map for wsSource (header row = 1)
+    Set srcHeaderMap = BuildHeaderMap(wsSource, 1)
+
     ' Define the target header range in wsTemplate (A9:S9)
     Set targetHeaderRange = wsTemplate.Range("A9:S9")
-    
+
     ' Loop through each target column in wsTemplate row 9
-    For targetCol = 1 To targetHeaderRange.Columns.Count
+    For targetCol = 1 To targetHeaderRange.columns.Count
         headerName = Trim(UCase(wsTemplate.Cells(9, targetCol).Value))
-        
+
         If Len(headerName) > 0 Then
-            ' Search for this header in wsSource row 1
-            For srcCol = 1 To srcLastCol
-                If UCase(Trim(wsSource.Cells(1, srcCol).Value)) = headerName Then
-                    ' Found match - copy the entire column (data only, from row 2 onwards)
-                    wsSource.Range(wsSource.Cells(2, srcCol), wsSource.Cells(srcLastRow, srcCol)).Copy _
-                        Destination:=wsDest.Cells(2, targetCol)
-                    ' Copy the header as well
-                    wsDest.Cells(1, targetCol).Value = wsSource.Cells(1, srcCol).Value
-                    Exit For
-                End If
-            Next srcCol
+            ' Look up source column using the header map
+            srcCol = GetColByHeader(srcHeaderMap, headerName)
+
+            If srcCol > 0 Then
+                ' Found match - copy the entire column (data only, from row 2 onwards)
+                wsSource.Range(wsSource.Cells(2, srcCol), wsSource.Cells(srcLastRow, srcCol)).Copy _
+                    Destination:=wsDest.Cells(2, targetCol)
+                ' Copy the header as well
+                wsDest.Cells(1, targetCol).Value = wsSource.Cells(1, srcCol).Value
+            End If
         End If
     Next targetCol
 End Sub
@@ -1439,3 +1557,4 @@ Function ColumnNumberToLetter(iCol As Long) As String
     vArr = Split(Cells(1, iCol).Address(True, False), "$")
     ColumnNumberToLetter = vArr(0)
 End Function
+
