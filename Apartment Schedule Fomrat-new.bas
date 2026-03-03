@@ -1,0 +1,1619 @@
+Option Explicit
+
+Function ColLetterToNumber(colLetter As String) As Long
+    ColLetterToNumber = Range(colLetter & "1").Column
+End Function
+
+' Helper function to convert column number to letter
+Function ColNumberToLetter(colNum As Long) As String
+    ColNumberToLetter = Split(Cells(1, colNum).Address, "$")(1)
+End Function
+
+' Helper function to get column number from header name using the header map
+Function GetColByHeader(headerMap As Object, headerName As String) As Long
+    If headerMap.Exists(UCase(headerName)) Then
+        GetColByHeader = headerMap(UCase(headerName))
+    Else
+        GetColByHeader = 0
+    End If
+End Function
+
+' Build a dictionary mapping uppercase header names to column numbers
+Function BuildHeaderMap(ws As Worksheet, headerRow As Long) As Object
+    Dim headerMap As Object
+    Set headerMap = CreateObject("Scripting.Dictionary")
+    
+    Dim col As Long
+    Dim headerName As String
+    
+    For col = 1 To 26
+        If ws.Cells(headerRow, col).Value <> "" Then
+            headerName = UCase(Trim(ws.Cells(headerRow, col).Value))
+            headerMap.Add headerName, col
+        End If
+    Next col
+    
+    Set BuildHeaderMap = headerMap
+End Function
+
+Function mapMaxValue(dict As Object) As Variant
+    
+    Dim key As Variant
+    Dim maxValue As Variant
+    Dim firstKey As Variant
+    
+    If dict Is Nothing Then Exit Function
+    If dict.Count = 0 Then Exit Function
+    
+    firstKey = dict.Keys()(0)
+    maxValue = dict(firstKey)
+    
+    For Each key In dict.Keys
+        If dict(key) > maxValue Then
+            maxValue = dict(key)
+        End If
+    Next key
+    
+    mapMaxValue = maxValue
+
+End Function
+
+Sub ProduceHQA()
+
+    Dim wsSource As Worksheet
+    Dim wsLong As Worksheet
+    Dim wsShort As Worksheet
+    Dim wsTypes As Worksheet
+    Dim wsTemplate As Worksheet
+    Dim wsBlocks As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim iShort As Long
+    Dim iBlocks As Long
+    Dim currentLevel As Variant
+    Dim previousLevel As Variant
+    Dim filePath As String
+    Dim typeDict As Object
+'    Dim blockDict As Object
+    Set typeDict = CreateObject("Scripting.Dictionary")
+        
+    Dim currentDate As String
+    currentDate = Format(Date, "yy-mm-dd") ' You can change format here
+    
+    Dim ws As Worksheet
+
+    ' Optimize performance
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.DisplayAlerts = False
+    
+    For Each ws In ThisWorkbook.Worksheets
+        If InStr(1, ws.Name, "Sheet", vbTextCompare) > 0 Then
+            ws.Delete
+        End If
+    Next ws
+    
+
+    
+    ' Set the original worksheet
+    Set wsSource = ThisWorkbook.Sheets("sourceData") ' Change to your original sheet name if needed
+    
+    ' Set the tempalte worksheet
+    Set wsTemplate = ThisWorkbook.Sheets("template") ' Change to your original sheet name if needed
+
+    filePath = Trim(wsTemplate.Range("AA5").Value)
+    
+    ' Remove surrounding double quotes if present (tolerant of quoted paths)
+    If Left(filePath, 1) = """" And Right(filePath, 1) = """" Then
+        filePath = Mid(filePath, 2, Len(filePath) - 2)
+    End If
+
+    If Dir(filePath) = "" Then
+        MsgBox "File not found:" & vbCrLf & filePath, vbExclamation
+        Exit Sub
+    Else:
+        Application.ScreenUpdating = False
+        Application.DisplayAlerts = False
+        wsSource.Cells.Clear
+            ' Remove any existing QueryTables (important!)
+        Dim qt As QueryTable
+        For Each qt In wsSource.QueryTables
+            qt.Delete
+        Next qt
+
+        Dim isCsv As Boolean
+        isCsv = (LCase(Right(filePath, 4)) = ".csv")
+
+        With wsSource.QueryTables.Add( _
+            Connection:="TEXT;" & filePath, _
+            Destination:=wsSource.Range("A1"))
+
+            .TextFileParseType = xlDelimited
+            .TextFileTabDelimiter = Not isCsv
+            .TextFileCommaDelimiter = isCsv
+            .TextFileTextQualifier = xlTextQualifierDoubleQuote
+            .TextFileConsecutiveDelimiter = False
+            .AdjustColumnWidth = True
+            .Refresh BackgroundQuery:=False
+            .Delete ' remove query but keep data
+        End With
+        Application.DisplayAlerts = True
+        Application.ScreenUpdating = True
+
+    End If
+    
+
+    
+    
+    
+    ' Create a new worksheet for the Long schedule output
+    Set wsShort = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    
+    wsShort.Name = wsShort.Name & " Short " & currentDate
+    
+    ' Create a new worksheet for the short schedule output
+    Set wsLong = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    
+    wsLong.Name = wsLong.Name & " Long " & currentDate
+    
+    ' Create a new worksheet for the unit types
+    Set wsTypes = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    
+    wsTypes.Name = wsTypes.Name & " Types " & currentDate
+    
+    ' Create a new worksheet for the blocks summary
+    Set wsBlocks = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+
+    wsBlocks.Name = wsBlocks.Name & " Blocks " & currentDate
+
+    'Change the dates in the template
+    wsTemplate.Cells(5, 4).Value = FormatDateWithSuffix(Date)
+    wsTemplate.Cells(14, 4).Value = FormatDateWithSuffix(Date)
+    wsTemplate.Cells(24, 4).Value = FormatDateWithSuffix(Date)
+
+    ' Copy columns from wsSource to wsLong by matching headers
+    ' wsSource headers are in row 1, wsTemplate headers are in row 9 (A9:S9)
+    Call CopyColumnsByHeader(wsSource, wsLong, wsTemplate, 1, 9)
+
+    ' Build header map for wsLong (header row = 9)
+    Dim headerMap As Object
+    Set headerMap = BuildHeaderMap(wsTemplate, 9)
+
+    'Build header map for wsShort (header row = 18)
+    Dim headerMapShort As Object
+    Set headerMapShort = BuildHeaderMap(wsTemplate, 18)
+
+    'Build header map for wsTypes (header row = 28)
+    Dim headerMapTypes As Object
+    Set headerMapTypes = BuildHeaderMap(wsTemplate, 28)
+
+    'Build header map for wsBlocks (header row = 37)
+    Dim headerMapBlocks As Object
+    Set headerMapBlocks = BuildHeaderMap(wsTemplate, 37)
+    
+    Dim lastCol As Long
+    lastCol = mapMaxValue(headerMap)
+
+    Dim lastColShort As Long
+    lastColShort = mapMaxValue(headerMapShort)
+
+    Dim lastColTypes As Long
+    lastColTypes = mapMaxValue(headerMapTypes)
+    
+    Dim lastColBlocks As Long
+    lastColBlocks = mapMaxValue(headerMapBlocks)
+    
+
+    ' Find the last used row in column C of the new sheet
+    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+    
+    ' Get column numbers for ZONE, BLOK, and LEVL headers using the header map
+    Dim zoneCol As Long, blokCol As Long, levelCol As Long
+    zoneCol = GetColByHeader(headerMap, "ZONE")
+    blokCol = GetColByHeader(headerMap, "BLOK")
+    levelCol = GetColByHeader(headerMap, "LEVL")
+
+    ' Recalculate the last row after deletions
+    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+
+    ' Delete rows containing XX in column F or G
+    For i = lastRow To 2 Step -1
+        If wsLong.Cells(i, blokCol).Value = "XX" Or wsLong.Cells(i, levelCol).Value = "XX" Then
+            wsLong.rows(i).Delete
+        End If
+    Next i
+
+    ' Recalculate last row after XX deletions
+    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+
+    ' Find the last row with data in column A
+    lastRow = wsLong.Cells(wsLong.rows.Count, "A").End(xlUp).row
+
+
+
+    ' Define the range of data you want to sort (A1 to O[lastRow])
+    With wsLong.Sort
+        .SortFields.Clear ' Clear any previous sort fields
+
+        ' Sort by ZONE > BLOK > LEVL (in that order)
+        If zoneCol > 0 Then
+            .SortFields.Add key:=wsLong.Range(wsLong.Cells(2, zoneCol), wsLong.Cells(lastRow, zoneCol)), Order:=xlAscending
+        End If
+        If blokCol > 0 Then
+            .SortFields.Add key:=wsLong.Range(wsLong.Cells(2, blokCol), wsLong.Cells(lastRow, blokCol)), Order:=xlAscending
+        End If
+        If levelCol > 0 Then
+            .SortFields.Add key:=wsLong.Range(wsLong.Cells(2, levelCol), wsLong.Cells(lastRow, levelCol)), Order:=xlAscending
+        End If
+
+        ' Apply the sorting to the range from A1 to O[lastRow]
+        .SetRange wsLong.Range("A1:" & ColumnNumberToLetter(lastCol) & lastRow)
+
+        ' Apply the sort
+        .Header = xlYes ' Assuming your data includes headers
+        .Apply
+    End With
+
+    ' Recalculate the last row after deletions
+    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+
+    ' wsLong.Cells(1, "F").Value = "MIN.AREA"
+    ' wsLong.Cells(1, "K").Value = "MIN.PR.AM"
+    ' wsLong.Cells(1, "M").Value = "MIN.COM"
+    ' wsLong.Cells(1, "N").Value = "10%+"
+
+    ' DYNAMIC BEDROOM COLUMNS SETUP
+    Dim bedCountsDict As Object
+    Set bedCountsDict = CreateObject("Scripting.Dictionary")
+    Dim bVal As Variant
+    
+    ' Scan for unique bedroom counts
+    For i = 2 To lastRow
+        bVal = wsLong.Cells(i, headerMap("BEDS")).Value
+        If IsNumeric(bVal) And Len(bVal) > 0 Then
+             bVal = CDbl(bVal)
+             If Not bedCountsDict.Exists(bVal) Then bedCountsDict.Add bVal, bVal
+        End If
+    Next i
+    
+    ' Sort keys
+    Dim bedKeys As Variant
+    bedKeys = bedCountsDict.Keys
+    Dim b1 As Long, b2 As Long, tempB As Variant
+    For b1 = LBound(bedKeys) To UBound(bedKeys) - 1
+        For b2 = b1 + 1 To UBound(bedKeys)
+            If bedKeys(b1) > bedKeys(b2) Then
+                tempB = bedKeys(b1)
+                bedKeys(b1) = bedKeys(b2)
+                bedKeys(b2) = tempB
+            End If
+        Next b2
+    Next b1
+    
+    Dim tally As Object
+    Set tally = CreateObject("Scripting.Dictionary")
+    
+    Dim sumTypeColumns As Collection: Set sumTypeColumns = New Collection
+    Dim sumTypeResultColumns As Collection: Set sumTypeResultColumns = New Collection
+    Dim shortSumTypeColumns As Collection: Set shortSumTypeColumns = New Collection
+    Dim percentCalcColumns As Collection: Set percentCalcColumns = New Collection
+    percentCalcColumns.Add GetColByHeader(headerMap, "min10")
+    percentCalcColumns.Add GetColByHeader(headerMap, "DUAL")
+    
+    Dim startColLong As Long: startColLong = lastCol + 4 ' Q
+    Dim startColShort As Long: startColShort = 3 ' C
+    Dim colLet As Long, resColLet As Long, shortColLet As Long
+    Dim bCount As Variant
+    
+    For b1 = LBound(bedKeys) To UBound(bedKeys)
+        bCount = bedKeys(b1)
+        
+        colLet = startColLong + b1
+        tally.Add bCount, colLet
+        
+        wsLong.Cells(1, colLet).Value = bCount & " BED"
+        wsBlocks.Cells(1, colLet).Value = bCount & " BED"
+        
+        sumTypeColumns.Add colLet
+        
+        resColLet = startColLong + b1 + 4
+        sumTypeResultColumns.Add resColLet
+        percentCalcColumns.Add resColLet
+        
+        shortColLet = startColShort + b1
+        shortSumTypeColumns.Add shortColLet
+        wsShort.Cells(1, shortColLet).Value = bCount & " BED"
+    Next b1
+    
+    Dim rng As Range
+    
+    '#################################
+    '## APPLY COLOURS AND STANDARDS ##
+    '#################################
+    Dim minAreaCol As Long
+    minAreaCol = GetColByHeader(headerMap, "minAREA")
+    Dim descCol As Long
+    descCol = GetColByHeader(headerMap, "BEDTYPE")
+    Dim areaCol As Long
+    areaCol = GetColByHeader(headerMap, "GIFA")
+    Dim pasCol As Long
+    pasCol = GetColByHeader(headerMap, "PAS")
+    Dim minPasCol As Long
+    minPasCol = GetColByHeader(headerMap, "minPAS")
+
+    If headerMap.Exists("minAREA") Then
+        wsLong.Cells(1, minAreaCol).Value = "minAREA"
+    End If
+    If headerMap.Exists("minPAS") Then
+        wsLong.Cells(1, minPasCol).Value = "minPAS"
+    End If
+    If headerMap.Exists("minCAS") Then
+        wsLong.Cells(1, areaCol).Value = "minCAS"
+    End If
+
+    For i = 2 To lastRow
+        Set rng = wsLong.Range(wsLong.Cells(i, "A"), wsLong.Cells(i, lastCol))
+    
+        Select Case True
+    
+            ' HOUSES
+            Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "HOUSE") > 0
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA27:AA33", rng, tally, headerMap)
+    
+            ' DUPLEX
+            Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "DUPLEX") > 0 _
+              Or InStr(1, UCase(wsLong.Cells(i, descCol).Value), "DUP") > 0
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA17:AA22", rng, tally, headerMap)
+    
+            ' APARTMENTS
+            Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "APARTMENT") > 0 _
+              Or InStr(1, UCase(wsLong.Cells(i, descCol).Value), "APT") > 0
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA8:AA13", rng, tally, headerMap)
+    
+        End Select
+    
+        ' COMPLIANCE CHECK – cell-level only
+        
+        ' GFA CHECK - check that the floor area matches the minimum area requirement for the unit type
+        If Val(wsLong.Cells(i, minAreaCol).Value) > Val(wsLong.Cells(i, areaCol).Value) _
+           And Val(wsLong.Cells(i, headerMap("GIFA")).Value) > 0 Then
+            wsLong.Cells(i, minAreaCol).Interior.Color = RGB(255, 0, 0)
+        End If
+
+        ' PRIVATE AMENITY AREA CHECK - check that the amenity area meets the minimum requirement for the unit type
+        If Val(wsLong.Cells(i, pasCol).Value) < Val(wsLong.Cells(i, minPasCol).Value) _
+           And Val(wsLong.Cells(i, minPasCol).Value) > 0 Then
+            wsLong.Cells(i, pasCol).Interior.Color = RGB(255, 0, 0)
+        End If
+    
+    Next i
+    
+    If headerMap.Exists("GIFA") And headerMap.Exists("MIN10") Then
+     
+        Dim areaExt
+        Dim areaCur
+        Dim min10Col As Long
+        min10Col = GetColByHeader(headerMap, "MIN10")
+        wsLong.Cells(1, min10Col).Value = "MIN10"
+        
+        'Add a +10% indicator to every row
+        
+        For i = 2 To lastRow
+            areaExt = wsLong.Cells(i, minAreaCol).Value * 1.1
+            areaCur = wsLong.Cells(i, areaCol).Value
+            
+            If areaCur > areaExt Then
+                wsLong.Cells(i, min10Col).Value = "1"
+            Else
+                wsLong.Cells(i, min10Col).Value = "0"
+            End If
+        
+        Next i
+    End If
+    
+   
+    
+    'find the last row
+    lastRow = wsLong.Cells(wsLong.rows.Count, "E").End(xlUp).row
+    
+    '############################
+    '## find unique unit types ##
+    '############################
+    Dim reTypes As Object
+    Set reTypes = CreateObject("VBScript.RegExp")
+    
+    Dim regexPattern As String
+    
+    ' Read the cell
+    regexPattern = Trim(wsTemplate.Range("X3").Value)
+    
+    ' Check if empty and assign default
+    If Len(regexPattern) = 0 Then
+        regexPattern = ".*"    ' default regex: matches anything
+    End If
+    
+    ' Apply to your regex object
+    With reTypes
+        .Global = False
+        .IgnoreCase = True
+        .Pattern = regexPattern
+    End With
+
+    Dim unitType
+    Dim unitKey
+    Dim tempArr
+    
+    For i = 2 To lastRow
+        unitType = wsLong.Cells(i, GetColByHeader(headerMap, "TYPE")).Value
+    
+        If Len(unitType) > 0 And reTypes.Test(unitType) Then
+    
+            ' Use regex match as the dictionary key
+            unitKey = UCase(Trim(reTypes.Execute(unitType)(0)))
+    
+            If Not typeDict.Exists(unitKey) Then
+                ' Store count = 1 and first row = i
+                typeDict.Add unitKey, Array(1, i)
+            Else
+                ' Increment count
+                tempArr = typeDict(unitKey)
+                tempArr(0) = tempArr(0) + 1
+                typeDict(unitKey) = tempArr
+            End If
+        End If
+    Next i
+    
+
+    Dim outputRow As Long
+    outputRow = 2
+    iBlocks = 2
+    
+    Dim typeKeys As Variant
+    typeKeys = typeDict.Keys
+    Dim typeItems As Variant
+    typeItems = typeDict.Items
+
+    '################################
+    '## Form wsTypes from typeDict ##
+    '################################
+
+    Dim searchKey
+    Dim k1
+    Dim k2
+    
+    Dim key
+    Dim col
+    For key = LBound(typeKeys) To UBound(typeKeys)
+    
+        ' With wsTypes.rows(outputRow)
+        '     .Value = wsLong.rows(typeItems(key)(1)).Value
+        ' End With
+        
+        wsTypes.Range(wsTypes.Cells(outputRow, 3), wsTypes.Cells(outputRow, lastCol)).Interior.Color = _
+        wsLong.Cells(typeItems(key)(1), 1).Interior.Color
+        
+        
+        For Each col In headerMapTypes.Keys
+            If headerMap.Exists(UCase(col)) Then
+                searchKey = headerMapTypes(col)
+                wsTypes.Cells(outputRow, headerMapTypes(UCase(col))).Value = wsLong.Cells(typeItems(key)(1), headerMap(UCase(col))).Value
+            End If
+        Next col
+
+        ' overwrite number column with count (same as your original code)
+        wsTypes.Cells(outputRow, GetColByHeader(headerMapTypes, "NO")).Value = typeItems(key)(0)
+        ' overwrite type column E with combined unit type
+        wsTypes.Cells(outputRow, GetColByHeader(headerMapTypes, "TYPE")).Value = typeKeys(key)
+    
+        outputRow = outputRow + 1
+    Next key
+
+        
+    lastRow = wsTypes.Cells(wsTypes.rows.Count, "E").End(xlUp).row
+    With wsTypes.Sort
+        .SortFields.Clear
+        .SortFields.Add key:=wsTypes.Range("E2:E" & lastRow), _
+            SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+
+        .SetRange wsTypes.Range("A2:" & ColumnNumberToLetter(lastColTypes) & lastRow)
+        .Header = xlNo
+        .Apply
+    End With
+    
+    Call drawBorderThickOutline(wsTypes.Range("A2:" & ColumnNumberToLetter(lastColTypes) & lastRow))
+    
+    wsTypes.Cells(lastRow + 1, GetColByHeader(headerMapTypes, "NO")).Formula = "=SUM(" & ColNumberToLetter(GetColByHeader(headerMapTypes, "NO")) & "2:" & ColNumberToLetter(GetColByHeader(headerMapTypes, "NO")) & lastRow & ")"
+    
+    With wsTypes.columns("F").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    With wsTypes.columns("K").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    With wsTypes.columns("M").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    
+    wsTemplate.rows("20:27").Copy
+    wsTypes.Range("A1").Insert Shift:=xlDown
+    
+    
+    lastRow = wsTypes.Cells(wsTypes.rows.Count, "E").End(xlUp).row
+    
+    wsTypes.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastColTypes) & lastRow + 1
+    
+    
+    'enable print preview
+    wsTypes.Activate
+    ActiveWindow.View = xlPageBreakPreview
+    With wsTypes.PageSetup
+        .Zoom = False
+        .FitToPagesWide = 1
+        .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
+    End With
+    With wsTypes.PageSetup
+        .PrintTitleRows = "$7:$9"
+    End With
+           
+    
+    
+    '############################################
+    '## BEGIN SETUP FOR LOOPING THRUGHT LEVELS ##
+    '############################################
+    
+    
+    'find the last row
+    lastRow = wsLong.Cells(wsLong.rows.Count, "C").End(xlUp).row
+        
+    ' Insert 2 empty rows
+    wsLong.rows(2).Resize(3).Insert Shift:=xlDown
+    
+    'set up collections for tracking level and floor changes
+    Dim changeLevel As Collection
+    Set changeLevel = New Collection    'collection for tracking level changes
+    Dim changeBlock As Collection
+    Set changeBlock = New Collection    'collection for tracking block changes
+    Dim changeZone As Collection
+    Set changeZone = New Collection     'collection for tracking zone changes
+
+    Dim shortChangeBlock As Collection
+    Set shortChangeBlock = New Collection 'collection for tracking block changes in the wsShort Schedule
+    Dim shortChangeZone As Collection
+    Set shortChangeZone = New Collection 'collection for tracking zone changes in the wsShort Schedule
+
+    Dim blocksChangeBlock As Collection
+    Set blocksChangeBlock = New Collection 'collection for tracking block changes in the wsBlocks Schedule
+    Dim blocksChangeZone As Collection
+    Set blocksChangeZone = New Collection 'collection for tracking zone changes in the wsBlocks Schedule
+    
+    'set up columnd to run summs on
+    'wsLong columns
+    
+    Dim blocksSumColumns As Collection
+    Set blocksSumColumns = New Collection
+    blocksSumColumns.Add GetColByHeader(headerMap, "No")
+    blocksSumColumns.Add GetColByHeader(headerMap, "GIFA")
+    blocksSumColumns.Add GetColByHeader(headerMap, "minAREA")
+    blocksSumColumns.Add GetColByHeader(headerMap, "BEDS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "PERS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "DUAL")
+    blocksSumColumns.Add GetColByHeader(headerMap, "minPAS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "PAS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "minCAS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "min10")
+    
+    Dim sumColumns As Collection
+    Set sumColumns = New Collection    'collection for columns to add
+    
+    'set up which columnds need to be summed, first columnd will use COUNTA instead if last comment is set to TRUE
+    sumColumns.Add GetColByHeader(headerMap, "No")
+    sumColumns.Add GetColByHeader(headerMap, "GIFA")
+    sumColumns.Add GetColByHeader(headerMap, "minAREA")
+    sumColumns.Add GetColByHeader(headerMap, "BEDS")
+    sumColumns.Add GetColByHeader(headerMap, "PERS")
+    sumColumns.Add GetColByHeader(headerMap, "DUAL")
+    sumColumns.Add GetColByHeader(headerMap, "minPAS")
+    sumColumns.Add GetColByHeader(headerMap, "PAS")
+    sumColumns.Add GetColByHeader(headerMap, "minCAS")
+    sumColumns.Add GetColByHeader(headerMap, "min10")
+    
+    'initiating the loop and strating parameters
+    i = 5 'start on row 5
+    iShort = 5 'start filling out wsShort on row 5
+
+    ' Initialize Regex objects outside the loop for performance
+    Dim re1 As Object
+    Set re1 = CreateObject("VBScript.RegExp")
+    With re1
+        .Pattern = "^[A-Za-z0-9]{1,2}$"
+        .IgnoreCase = True
+        .Global = False
+    End With
+    
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    ' Read the cell for block pattern
+    regexPattern = Trim(wsTemplate.Range("X2").Value)
+    If Len(regexPattern) = 0 Then
+        regexPattern = ".*"
+    End If
+    With re
+        .Global = False
+        .IgnoreCase = True
+        .Pattern = regexPattern
+    End With
+    
+    
+    Dim levelStartRow As Long
+    Dim blockStartRow As Long
+    Dim zoneStartRow As Long
+    Dim shortBlockStartRow As Long
+    
+    Dim currentZone
+    Dim previousZone
+    Dim previousBlock
+    Dim currentBlock
+    
+    previousLevel = wsLong.Cells(5, GetColByHeader(headerMap, "LEVL")).Value 'take the initial level name
+    previousBlock = wsLong.Cells(5, GetColByHeader(headerMap, "BLOK")).Value 'take the initial block name
+    previousZone = wsLong.Cells(5, GetColByHeader(headerMap, "ZONE")).Value 'take the initial zone name
+    levelStartRow = 5 'take the initial level start postion
+    blockStartRow = 5 'take the initial block start postion
+    zoneStartRow = 5 'take the initial zone start postion
+    shortBlockStartRow = 5
+
+    Dim levelRange As Range
+    Dim levelTitle As String
+
+    Set re1 = CreateObject("VBScript.RegExp")            
+    With re1
+    .Pattern = "^[A-Za-z0-9]{1,2}$"
+    .IgnoreCase = True
+    .Global = False
+    End With
+    
+    Do While True
+        currentLevel = wsLong.Cells(i, GetColByHeader(headerMap, "LEVL")).Value
+        currentBlock = wsLong.Cells(i, GetColByHeader(headerMap, "BLOK")).Value
+        currentZone = wsLong.Cells(i, GetColByHeader(headerMap, "ZONE")).Value
+        
+        If currentLevel <> previousLevel Or currentBlock <> previousBlock Or currentZone <> previousZone Then
+            
+            'record change rows
+          
+            ' Insert 3 empty rows
+            wsLong.rows(i).Resize(3).Insert Shift:=xlDown
+            
+            ' Clear fill color for the inserted rows
+            wsLong.rows(i).Resize(3).Interior.ColorIndex = -4142 ' No Fill
+            
+            ' Add SUM formulas for columns I-K up until the previous empty row
+             
+            Call sumColumnsSub(wsLong, sumColumns, levelStartRow, i, 0, True) 'summing up the main stats
+            
+            Call sumColumnsSub(wsLong, sumTypeColumns, levelStartRow, i, 4, False) 'summing up the apartment types and offsetting the result
+
+            'calculate %s~
+            
+            Call percentColumnsSub(wsLong, percentCalcColumns, i, 0)
+            
+            ' Apply borders for the block range (A to N, blockStartRow to i-1)
+            
+            Set levelRange = wsLong.Range(wsLong.Cells(i - 1, "A"), wsLong.Cells(levelStartRow, lastCol))
+            
+            Call drawBorderThickOutline(levelRange)
+
+
+            ' Add title to floors
+            
+            
+            If re1.Test(previousBlock) Then
+                ' string matches 1–2 alphanumeric characters
+                levelTitle = "Block " & previousBlock & " Level " & previousLevel
+            Else
+               levelTitle = previousBlock
+            End If
+            
+            
+            With wsLong.Cells(levelStartRow - 1, "B")
+                .Value = levelTitle
+                .Font.Bold = True
+                .Font.Color = RGB(0, 176, 240)
+                .Font.Name = "Calibri"
+                .HorizontalAlignment = xlLeft
+            End With
+            
+            
+            'link data to wsShort
+            Call linkRow(wsLong, wsShort, sumColumns, i, iShort, 0) ' link the level summary row to the wsShort Schedule
+            Call linkRow(wsLong, wsShort, sumTypeResultColumns, i, iShort, -18)
+            With wsShort.Cells(iShort, "B")
+                .Value = previousLevel
+                .Font.Bold = False
+            End With
+            
+            iShort = iShort + 1
+                       
+                        
+            changeLevel.Add i
+            
+            'if the blocks change
+            
+            If currentBlock <> previousBlock Or currentZone <> previousZone Then
+            
+                Dim blockEndRow As Long
+                blockEndRow = i - 1   ' last data row of the block
+                
+                ' Add block summary title
+                Dim blockTitle As String
+                If re1.Test(previousBlock) Then
+                    ' string matches 1–2 alphanumeric characters
+                    blockTitle = "Block " & previousBlock & " Summary"
+                Else
+                    blockTitle = previousBlock & " Summary"
+                End If
+                
+                changeBlock.Add i + 3
+
+                
+                ' Clear fill color for the inserted rows
+                wsLong.rows(i).Resize(3).Interior.ColorIndex = -4142 ' No Fill
+                
+                'write a summary only if there are multiple levels in a block / area
+                If previousLevel <> 0 Or previousLevel <> "NA" Then
+                    i = i + 3
+                 
+                    ' Insert 3 empty rows
+                    wsLong.rows(i).Resize(3).Insert Shift:=xlDown
+                    
+                                    
+                    Call drawBorderLine(wsLong, i, lastCol)     ' add summary line
+                    
+                    With wsLong.Cells(i - 1, "B")
+                        .Value = blockTitle
+                        .Font.Bold = True
+                        .Font.Color = RGB(0, 176, 240)
+                        .Font.Name = "Calibri"
+                        .HorizontalAlignment = xlLeft
+                    End With
+                                 
+                    Call sumColumnsSub(wsLong, sumTypeColumns, blockStartRow, i, 4, False) 'summing up the apartment types and offsetting the result
+    
+                    'calculate %s~
+                
+                    Call percentColumnsSub(wsLong, percentCalcColumns, i, 0)
+                                    
+                    Call sumColumnsRowsSub(wsLong, sumColumns, changeLevel, i)
+
+                    If currentZone <> previousZone Then
+                        i = i + 3 ' insert extra row if zone is also changing
+                        wsLong.rows(i).Resize(3).Insert Shift:=xlDown
+                        changeZone.Add i
+                        Call drawBorderLine(wsLong, i, lastCol)     ' add summary line
+                        With wsLong.Cells(i - 1, "B")
+                            .Value = "Zone " & previousZone & " Summary"
+                            .Font.Bold = True
+                            .Font.Color = RGB(0, 176, 240)
+                            .Font.Name = "Calibri"
+                            .HorizontalAlignment = xlLeft
+                        End With
+                    
+                        Call sumColumnsRowsSub(wsLong, sumColumns, changeBlock, i)
+                        previousZone = currentZone
+                        Set shortChangeZone = New Collection
+                        Set changeBlock = New Collection
+                    End If
+                Else
+                    changeBlock.Add i
+                End If
+                
+                '########################
+                '## updates to wsShort ##
+                '########################
+                
+                'add block titles
+                With wsShort.Cells(shortBlockStartRow - 1, "B")
+                    .Value = blockTitle
+                    .Font.Bold = True
+                    .Font.Color = RGB(0, 176, 240)
+                    .Font.Name = "Calibri"
+                    .HorizontalAlignment = xlLeft
+                End With
+                '
+                Call sumColumnsSub(wsShort, sumColumns, shortBlockStartRow, iShort, 0, False)
+                Call sumColumnsSub(wsShort, shortSumTypeColumns, shortBlockStartRow, iShort, 0, False)
+                
+                Dim shortBlockRange As Range
+                
+                Set shortBlockRange = wsShort.Range(wsShort.Cells(iShort - 1, "A"), wsShort.Cells(shortBlockStartRow, "N"))
+                              
+            
+                
+                '#########################
+                '## updates to wsBlocks ##
+                '#########################
+                
+                With wsBlocks.Cells(iBlocks - 1, "B")
+                    .Value = blockTitle
+                    .Font.Bold = True
+                    .Font.Color = RGB(0, 176, 240)
+                    .Font.Name = "Calibri"
+                    .HorizontalAlignment = xlLeft
+                End With
+                
+                Dim blockStartRowBlocks As Long
+                blockStartRowBlocks = iBlocks
+                
+                Dim blockDict As Object
+                Set blockDict = CreateObject("Scripting.Dictionary")
+                
+                Set re = CreateObject("VBScript.RegExp")
+                're.Pattern = "^\d?[A-Za-z]"
+                
+                ' Read the cell
+                regexPattern = Trim(wsTemplate.Range("X2").Value)
+                
+                ' Check if empty and assign default
+                If Len(regexPattern) = 0 Then
+                    regexPattern = ".*"    ' default regex: matches anything
+                End If
+                
+                ' Apply to your regex object
+                With re
+                    .Global = False
+                    .IgnoreCase = True
+                    .Pattern = regexPattern
+                End With
+
+                re.Global = False
+
+                Dim o As Long
+                'Dim unitKey As String
+                Dim floorArea As Double
+                Dim aspect As Long
+                Dim amenityArea As Double
+                
+                ' Cache column numbers using header map
+                Dim typeCol As Long, gifaCol As Long, dualCol As Long, casCol As Long
+                typeCol = GetColByHeader(headerMap, "TYPE")
+                gifaCol = GetColByHeader(headerMap, "GIFA")
+                dualCol = GetColByHeader(headerMap, "DUAL")
+                casCol = GetColByHeader(headerMap, "CAS")
+
+                For o = blockStartRow To blockEndRow
+                    unitType = wsLong.Cells(o, typeCol).Value
+                    floorArea = 0
+                    amenityArea = 0
+                    aspect = 0
+
+                    If gifaCol > 0 And IsNumeric(wsLong.Cells(o, gifaCol).Value) Then
+                        floorArea = wsLong.Cells(o, gifaCol).Value
+                    End If
+                    If dualCol > 0 And IsNumeric(wsLong.Cells(o, dualCol).Value) Then
+                        aspect = wsLong.Cells(o, dualCol).Value
+                    End If
+                    If pasCol > 0 And IsNumeric(wsLong.Cells(o, pasCol).Value) Then
+                        amenityArea = wsLong.Cells(o, pasCol).Value
+                    End If
+
+                    If Len(unitType) > 0 And re.Test(unitType) Then
+                        unitKey = UCase(Trim(re.Execute(unitType)(0)))
+
+                        If Not blockDict.Exists(unitKey) Then
+                            ' count, first row, total floor area
+                            blockDict.Add unitKey, Array(1, o, floorArea, aspect, amenityArea)
+                        Else
+                            tempArr = blockDict(unitKey)
+                            tempArr(0) = tempArr(0) + 1          ' count
+                            tempArr(2) = tempArr(2) + floorArea ' sum of floor areas
+                            tempArr(3) = tempArr(3) + aspect    ' sum of aspect
+                            tempArr(4) = tempArr(4) + amenityArea    ' sum of aspect
+                            blockDict(unitKey) = tempArr
+                        End If
+                    End If
+                Next o
+
+                
+                ' Calculate total units in block for %
+                Dim totalUnits As Long
+                totalUnits = 0
+                Dim k As Variant
+                For Each k In blockDict.Keys
+                    totalUnits = totalUnits + blockDict(k)(0)
+                Next k
+                
+                Dim blockKeys As Variant
+                Dim iKey As Long, jKey As Long
+                Dim tempKey As String
+                
+                ' Get dictionary keys
+                blockKeys = blockDict.Keys
+                
+                ' Sort keys alphabetically (A-Z) using simple bubble sort
+                For iKey = LBound(blockKeys) To UBound(blockKeys) - 1
+                    For jKey = iKey + 1 To UBound(blockKeys)
+                        If blockKeys(iKey) > blockKeys(jKey) Then
+                            tempKey = blockKeys(iKey)
+                            blockKeys(iKey) = blockKeys(jKey)
+                            blockKeys(jKey) = tempKey
+                        End If
+                    Next jKey
+                Next iKey
+
+                
+                Dim srcRow As Range, dstRow As Range
+                Dim c As Long
+                
+                ' Write block summary rows
+                For key = LBound(blockKeys) To UBound(blockKeys)
+                    Set srcRow = wsLong.rows(blockDict(blockKeys(key))(1))
+                    Set dstRow = wsBlocks.rows(iBlocks)
+                    
+                    ' Copy values
+                    dstRow.Value = srcRow.Value
+                    
+                    ' Copy formatting for columns D:N
+                    For c = 4 To 14
+                        With dstRow.Cells(1, c)
+                            .Interior.Color = srcRow.Cells(1, c).Interior.Color
+                        End With
+                    Next c
+                    
+                    ' Column A = count of units
+                    wsBlocks.Cells(iBlocks, 1).Value = blockDict(blockKeys(key))(0)
+                    
+                    ' Column B = % of total units (integer percent)
+                    If totalUnits > 0 Then
+                        wsBlocks.Cells(iBlocks, 2).Value = Format(blockDict(blockKeys(key))(0) / totalUnits, "0%")
+                    Else
+                        wsBlocks.Cells(iBlocks, 2).Value = "0%"
+                    End If
+                    
+                    Dim bCountVal As Variant
+                    bCountVal = wsBlocks.Cells(iBlocks, "H").Value
+                    If IsNumeric(bCountVal) Then bCountVal = CDbl(bCountVal)
+                    
+                    If tally.Exists(bCountVal) Then
+                        wsBlocks.Cells(iBlocks, tally(bCountVal)).Value = blockDict(blockKeys(key))(0)
+                    End If
+                    
+'                    With wsBlocks.Cells(iBlocks, "F")
+'                        .Value = wsBlocks.Cells(iBlocks, 7).Value * blockDict(blockKeys(key))(0)
+'                    End With
+                    
+                    
+                    wsBlocks.Cells(iBlocks, "F").Value = blockDict(blockKeys(key))(2)
+                    
+                    
+                    With wsBlocks.Cells(iBlocks, "H")
+                        .Value = wsBlocks.Cells(iBlocks, "H").Value * blockDict(blockKeys(key))(0)
+                    End With
+                    With wsBlocks.Cells(iBlocks, "I")
+                        .Value = wsBlocks.Cells(iBlocks, "I").Value * blockDict(blockKeys(key))(0)
+                    End With
+                    'aspect
+                    wsBlocks.Cells(iBlocks, "J").Value = blockDict(blockKeys(key))(3)
+                    
+                    With wsBlocks.Cells(iBlocks, "K")
+                        .Value = wsBlocks.Cells(iBlocks, "K").Value * blockDict(blockKeys(key))(0)
+                    End With
+                    
+                    wsBlocks.Cells(iBlocks, "L").Value = blockDict(blockKeys(key))(4)
+                    
+                    With wsBlocks.Cells(iBlocks, "M")
+                        .Value = wsBlocks.Cells(iBlocks, "M").Value * blockDict(blockKeys(key))(0)
+                    End With
+                    With wsBlocks.Cells(iBlocks, "N")
+                        .Value = wsBlocks.Cells(iBlocks, "N").Value * blockDict(blockKeys(key))(0)
+                    End With
+                    
+                    
+                    'tally unit bedroom types
+                    
+                    
+                    
+                    ' Clear column C
+                    wsBlocks.Cells(iBlocks, 3).ClearContents
+                    
+                    ' Column E = unit type
+                    wsBlocks.Cells(iBlocks, 5).Value = blockKeys(key)
+                    
+                    iBlocks = iBlocks + 1
+                Next key
+
+                
+                ' Draw borders for the block
+                Call drawBorderLine(wsBlocks, iBlocks, lastCol)
+                Call sumColumnsSub(wsBlocks, blocksSumColumns, blockStartRowBlocks, iBlocks, 0, False)
+                Call sumColumnsSub(wsBlocks, sumTypeColumns, blockStartRowBlocks, iBlocks, 4, False)
+                Call percentColumnsSub(wsBlocks, percentCalcColumns, iBlocks, 0) 'add %
+                
+                Dim blockRange As Range
+                Set blockRange = wsBlocks.Range( _
+                    wsBlocks.Cells(iBlocks - 1, "A"), _
+                    wsBlocks.Cells(blockStartRowBlocks, "N") _
+                )
+                
+                Call drawBorderThickOutline(blockRange)
+                
+                
+
+
+
+
+                'format wsLong
+                
+                Call drawBorderThickOutline(shortBlockRange)
+                Call percentColumnsSub(wsShort, percentCalcColumns, iShort, 0)
+                Call percentColumnsSub(wsShort, shortSumTypeColumns, iShort, 0)
+                
+                
+                shortChangeBlock.Add iShort
+                blocksChangeBlock.Add iBlocks
+                iShort = iShort + 3
+                iBlocks = iBlocks + 3
+                
+                shortBlockStartRow = iShort
+                
+                
+                blockStartRow = i + 1
+                
+                
+                Set changeLevel = New Collection
+                previousBlock = currentBlock
+            End If
+            
+            i = i + 3 ' Skip the inserted empty rows
+            levelStartRow = i
+            lastRow = lastRow + 3
+        End If
+                  
+        previousLevel = currentLevel
+                
+        i = i + 1
+        
+        If wsLong.Cells(i - 1, 1).Value = 0 Then
+            Exit Do
+        End If
+        
+        If i > 100000 Then
+            Exit Do
+        End If
+    Loop
+    
+    
+    'start filling out the overall summary but offsetting the position
+    i = i - 1
+            
+    'add a summary line
+    Call drawBorderLine(wsLong, i, lastCol)
+        
+    'add a title
+    With wsLong.Cells(i - 1, "B")
+        .Value = "Whole Scheme Summary"
+        .Font.Bold = True
+        .Font.Color = RGB(0, 176, 240)
+        .Font.Name = "Calibri"
+        .HorizontalAlignment = xlLeft
+    End With
+    
+    Call sumColumnsSub(wsLong, sumTypeColumns, 4, i, 4, False)
+    Call percentColumnsSub(wsLong, percentCalcColumns, i, 0)
+    
+    'start summing up the main stats
+    
+    Call sumColumnsRowsSub(wsLong, sumColumns, changeBlock, i)
+    
+    
+    
+    'fit out wsShort Totals
+    
+    'add a summary line
+    Call drawBorderLine(wsShort, iShort, lastCol)
+        
+    'add a title
+    With wsShort.Cells(iShort - 1, "B")
+        .Value = "Whole Scheme Summary"
+        .Font.Bold = True
+        .Font.Color = RGB(0, 176, 240)
+        .Font.Name = "Calibri"
+        .HorizontalAlignment = xlLeft
+    End With
+    
+    Call sumColumnsRowsSub(wsShort, sumColumns, shortChangeBlock, iShort) 'sum up main stats
+    Call sumColumnsRowsSub(wsShort, shortSumTypeColumns, shortChangeBlock, iShort) 'sum up unit types
+    Call percentColumnsSub(wsShort, percentCalcColumns, iShort, 0) 'add %
+    Call percentColumnsSub(wsShort, shortSumTypeColumns, iShort, 0) 'add %
+    
+    'fit out wsBlocks Totals
+    
+    'add a summary line
+    Call drawBorderLine(wsBlocks, iBlocks, lastCol)
+    
+    'add a title
+    With wsBlocks.Cells(iBlocks - 1, "B")
+        .Value = "Whole Scheme Summary"
+        .Font.Bold = True
+        .Font.Color = RGB(0, 176, 240)
+        .Font.Name = "Calibri"
+        .HorizontalAlignment = xlLeft
+    End With
+    
+    Call sumColumnsRowsSub(wsBlocks, blocksSumColumns, blocksChangeBlock, iBlocks) 'sum up main stats
+    Call sumColumnsSub(wsBlocks, sumTypeColumns, 1, iBlocks, 0, False) 'sum up unit types
+    Call percentColumnsSub(wsBlocks, percentCalcColumns, iBlocks, 0) 'add %
+    Call percentColumnsSub(wsBlocks, sumTypeColumns, iBlocks, 0) 'add %
+  
+    
+    'center align columns A B C E
+    With wsLong
+        .Range("A1:A" & .Cells(.rows.Count, "A").End(xlUp).row).HorizontalAlignment = xlCenter
+'        .Range("B1:B" & .Cells(.rows.Count, "B").End(xlUp).row).HorizontalAlignment = xlCenter
+        .Range("C1:C" & .Cells(.rows.Count, "C").End(xlUp).row).HorizontalAlignment = xlCenter
+        .Range("E1:E" & .Cells(.rows.Count, "E").End(xlUp).row).HorizontalAlignment = xlCenter
+    End With
+    With wsShort
+'        .Range("B1:B" & .Cells(.rows.Count, "B").End(xlUp).row).HorizontalAlignment = xlCenter
+    End With
+    
+    
+    'some final fomatting
+    columns("E").Font.Bold = True 'bold text for apartment type
+    With wsLong.columns("F").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    With wsLong.columns("K").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    With wsLong.columns("M").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    
+'    With wsShort.columns("F").Font
+'        .Color = RGB(128, 128, 128) ' Grey text
+'        .Bold = True
+'    End With
+    With wsShort.columns("K").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    With wsShort.columns("M").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    
+    With wsBlocks.columns("E").Font
+        .Bold = True
+    End With
+'    With wsBlocks.columns("F").Font
+'        .Color = RGB(128, 128, 128) ' Grey text
+'        .Bold = True
+'    End With
+    With wsBlocks.columns("K").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    With wsBlocks.columns("M").Font
+        .Color = RGB(128, 128, 128) ' Grey text
+        .Bold = True
+    End With
+    
+    
+    
+    
+    
+    
+    'copy the headers fropm wsTemplate
+
+    
+    wsTemplate.Range("A1:" & ColumnNumberToLetter(lastCol) & "8").Copy
+    wsLong.Range("A1").Insert Shift:=xlDown
+    wsTemplate.Range("BA1:BR8").Copy
+    wsLong.Range(ColumnNumberToLetter(lastCol + 1) & "1").Insert Shift:=xlDown
+    wsLong.rows("9:9").Delete
+    
+    wsTemplate.Range("A10:" & ColumnNumberToLetter(lastCol) & "17").Copy
+    wsShort.Range("A1").Insert Shift:=xlDown
+    wsTemplate.Range("BA1:BR8").Copy
+    wsShort.Range(ColumnNumberToLetter(lastCol + 1) & "1").Insert Shift:=xlDown
+
+    wsTemplate.Range("A29:" & ColumnNumberToLetter(lastCol) & "36").Copy
+    wsBlocks.Range("A1").Insert Shift:=xlDown
+    wsTemplate.Range("BA1:BR8").Copy
+    wsBlocks.Range(ColumnNumberToLetter(lastCol + 1) & "1").Insert Shift:=xlDown
+    
+    With wsTypes.Range(ColumnNumberToLetter(lastColTypes + 1) & "1:BB8")
+        .UnMerge
+        .Clear
+        .Borders.LineStyle = xlNone
+    End With
+    'timestamp
+    
+    Dim d As Date
+    Dim suffix As String
+    Dim dateFormated As String
+    
+    d = Date
+    
+    Select Case Day(d)
+        Case 1, 21, 31: suffix = "st"
+        Case 2, 22:     suffix = "nd"
+        Case 3, 23:     suffix = "rd"
+        Case Else:      suffix = "th"
+    End Select
+    
+    dateFormated = Day(d) & suffix & " " & _
+                           Format(d, "mmmm yyyy")
+    wsLong.Range("E5").Value = dateFormated
+    wsShort.Range("E5").Value = dateFormated
+    wsTypes.Range("E5").Value = dateFormated
+    wsBlocks.Range("E5").Value = dateFormated
+
+    
+    'set print areas
+
+    
+    lastRow = wsLong.Cells(wsLong.rows.Count, "N").End(xlUp).row
+    wsLong.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow
+    
+    lastRow = wsShort.Cells(wsShort.rows.Count, "N").End(xlUp).row
+    wsShort.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow
+    
+    lastRow = wsBlocks.Cells(wsBlocks.rows.Count, "N").End(xlUp).row
+    wsBlocks.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow
+        
+    'enable print preview
+    wsLong.Activate
+    ActiveWindow.View = xlPageBreakPreview
+    With wsLong.PageSetup
+        .Zoom = False
+        .FitToPagesWide = 1
+        .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
+    End With
+    With wsLong.PageSetup
+        .PrintTitleRows = "$7:$9"
+    End With
+    
+    wsShort.Activate
+    ActiveWindow.View = xlPageBreakPreview
+    With wsShort.PageSetup
+        .Zoom = False
+        .FitToPagesWide = 1
+        .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
+    End With
+    
+    With wsShort.PageSetup
+        .PrintTitleRows = "$7:$9"
+    End With
+    
+    wsBlocks.Activate
+    ActiveWindow.View = xlPageBreakPreview
+    With wsBlocks.PageSetup
+        .Zoom = False
+        .FitToPagesWide = 1
+        .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
+    End With
+    
+    With wsBlocks.PageSetup
+        .PrintTitleRows = "$7:$9"
+    End With
+    
+
+    wsLong.Activate
+    Application.CutCopyMode = False
+    wsLong.Range("A1").Select
+    
+    wsShort.Activate
+    Application.CutCopyMode = False
+    wsShort.Range("A1").Select
+    
+    wsTypes.Activate
+    Application.CutCopyMode = False
+    wsTypes.Range("A1").Select
+    
+    ' Restore application settings
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.DisplayAlerts = True
+    
+End Sub
+
+
+Sub sumColumnsSub(ws As Worksheet, columns As Collection, startRow As Long, endRow As Long, colOffset As Long, Optional countFirst As Boolean = False)
+        Dim P
+        For P = 1 To columns.Count
+        
+        If P = 1 And countFirst = True Then
+            With ws.Cells(endRow, columns(P) + colOffset)
+                    .Formula = "=COUNTA(" & ColNumberToLetter(columns(P)) & endRow - 1 & ":" & ColNumberToLetter(columns(P)) & startRow & ")"
+                    .Font.Bold = True
+            End With
+        Else
+            With ws.Cells(endRow, columns(P) + colOffset)
+                    .Formula = "=SUM(" & ColNumberToLetter(columns(P)) & endRow - 1 & ":" & ColNumberToLetter(columns(P)) & startRow & ")"
+                    .Font.Bold = True
+            End With
+        End If
+            
+        Next P
+End Sub
+
+Sub sumColumnsRowsSub(ws As Worksheet, columns As Collection, rows As Collection, i As Long)
+        Dim P As Long
+        Dim q As Long
+        Dim colNum As Long
+        Dim colLetter As String
+        
+        If rows.Count > 0 Then
+        
+            For P = 1 To columns.Count
+                colNum = columns(P)
+                colLetter = ColNumberToLetter(colNum)
+    
+                'Declare the formula and start writing it
+                Dim blockFormulaString As String
+                blockFormulaString = "=SUM("
+    
+                For q = 1 To rows.Count
+                    If q = rows.Count Then
+                        ' For the last item, don't add a comma after it
+                        blockFormulaString = blockFormulaString & colLetter & rows(q) & ")"
+                    Else
+                        ' For all other items, add a comma between cell references
+                        blockFormulaString = blockFormulaString & colLetter & rows(q) & ","
+                    End If
+                Next q
+    
+    
+                ws.Cells(i, colNum).Formula = blockFormulaString
+    
+            Next P
+        End If
+End Sub
+
+
+
+Sub percentColumnsSub(ws As Worksheet, columns As Collection, row As Long, colOffset As Long)
+        Dim P
+        For P = 1 To columns.Count
+        
+            With ws.Cells(row + 1, columns(P))
+                .Formula = "=" & ColumnNumberToLetter(columns(P)) & row & "/A" & row
+                .Font.Bold = False
+                .NumberFormat = "0%"
+            End With
+            
+        Next P
+End Sub
+
+Sub drawBorderThickOutline(rng As Range)
+    With rng.Borders(xlInsideHorizontal)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlThin
+    End With
+    With rng.Borders(xlInsideVertical)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlThin
+    End With
+    ' Add a thick exterior border
+    With rng.Borders(xlEdgeBottom)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeRight)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeLeft)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeTop)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+End Sub
+
+Sub drawBorderLine(ws As Worksheet, i As Long, c As Long)
+    Dim rng
+     Set rng = ws.Range(ws.Cells(i, "A"), ws.Cells(i, c))
+    
+     With rng.Borders(xlEdgeTop)
+         .LineStyle = xlContinuous
+         .ColorIndex = 0
+         .TintAndShade = 0
+         .Weight = xlThick
+     End With
+     
+    rng.Font.Bold = True
+End Sub
+
+Sub linkRow(wsSource As Worksheet, wsDestination As Worksheet, columns As Collection, rowSrc As Long, rowDest As Long, colOffset As Long)
+    Dim P As Long
+    Dim colNum As Long
+    Dim colLetter As String
+    For P = 1 To columns.Count
+        colNum = columns(P) + colOffset
+        colLetter = ColNumberToLetter(colNum)
+        With wsDestination.Cells(rowDest, colNum)
+            .Formula = "='" & wsSource.Name & "'!" & colLetter & rowSrc
+            .Font.Bold = False
+        End With
+    Next P
+End Sub
+
+Function FormatDateWithSuffix(dt As Date) As String
+    Dim dayNum As Integer
+    Dim suffix As String
+
+    dayNum = Day(dt)
+
+    ' Determine the suffix
+    Select Case dayNum
+        Case 1, 21, 31: suffix = "st"
+        Case 2, 22: suffix = "nd"
+        Case 3, 23: suffix = "rd"
+        Case Else: suffix = "th"
+    End Select
+
+    ' Build the final string
+    FormatDateWithSuffix = dayNum & suffix & " " & Format(dt, "mmmm yyyy")
+End Function
+
+Function HEX(hexColor As String) As Long
+    Dim r As Integer, g As Integer, b As Integer
+
+    ' Remove "#" if it exists
+    If Left(hexColor, 1) = "#" Then
+        hexColor = Mid(hexColor, 2)
+    End If
+
+    ' Validate hex color length
+    If Len(hexColor) <> 6 Then
+        Err.Raise vbObjectError + 513, , "Invalid hex color format. Must be 6 characters like '#FF5733'."
+    End If
+
+    ' Convert hex to RGB
+    On Error GoTo ErrorHandler
+    r = CInt("&H" & Mid(hexColor, 1, 2))
+    g = CInt("&H" & Mid(hexColor, 3, 2))
+    b = CInt("&H" & Mid(hexColor, 5, 2))
+    HEX = RGB(r, g, b)
+    Exit Function
+
+ErrorHandler:
+    HEX = RGB(255, 255, 255) ' fallback to white on error
+    MsgBox "Invalid HEX color: " & hexColor, vbExclamation
+End Function
+
+Public Sub ApplyDwellingLookup( _
+    wsData As Worksheet, _
+    wsTemplate As Worksheet, _
+    rowNum As Long, _
+    lookupRange As String, _
+    rngRow As Range, _
+    tallyMap As Object, _
+    headerMap As Object _
+)
+
+    Dim bedCount As Long
+    Dim personCount As Long
+    Dim lookupKey As String
+    Dim foundRow As Range
+    Dim tallyCol As Long
+
+    bedCount = wsData.Cells(rowNum, headerMap("BEDS")).Value
+    personCount = wsData.Cells(rowNum, headerMap("PERS")).Value
+
+    lookupKey = bedCount & "b " & personCount & "p"
+
+    Set foundRow = wsTemplate.Range(lookupRange).Find( _
+                        What:=lookupKey, _
+                        LookAt:=xlWhole, _
+                        MatchCase:=False)
+
+    If foundRow Is Nothing Then
+        rngRow.Interior.Color = RGB(255, 0, 0)
+        Exit Sub
+    End If
+
+    ' Apply template colour
+    rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, "AB").Interior.Color
+
+    ' Set minimums
+    If headerMap.Exists("MINAREA") Then
+        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.row, "AC").Value ' Min Area
+    End If
+    If headerMap.Exists("MINPAS") Then
+        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.row, "AD").Value ' Min PAS
+    End If
+    If headerMap.Exists("MINCAS") Then
+        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, "AE").Value ' Min CAS
+    End If
+
+    ' Tally
+    If tallyMap.Exists(bedCount) Then
+        tallyCol = tallyMap(bedCount)
+        wsData.Cells(rowNum, tallyCol).Value = 1
+    End If
+
+End Sub
+
+Sub ImportTSV(filePath As String)
+
+    With wsSource.Add( _
+        Connection:="TEXT;C:\Temp\data.txt", _
+        Destination:=wsSource.Range("A1"))
+
+        .TextFileTabDelimiter = True
+        .TextFileParseType = xlDelimited
+        .Refresh
+    End With
+
+End Sub
+
+Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, wsTemplate As Worksheet, rowSource, rowDest)
+    ' Copy columns from wsSource to wsDest by matching headers
+    ' wsSource headers are in row 1
+    ' wsTemplate headers are in row 9 (A9:S9) - these define the target column order
+    ' wsDest will receive the data in the same column positions as wsTemplate
+
+    Dim srcLastRow As Long
+    Dim targetCol As Long
+    Dim srcHeaderMap As Object
+    Dim targetHeaderRange As Range
+    Dim headerName As String
+    Dim srcCol As Long
+
+    ' Get the last used row in wsSource
+    srcLastRow = wsSource.Cells(wsSource.rows.Count, 1).End(xlUp).row
+
+    ' Build header map for wsSource (header row = rowSource)
+    Set srcHeaderMap = BuildHeaderMap(wsSource, 1)
+
+    ' Define the target header range in wsTemplate (A9:S9)
+    Set targetHeaderRange = wsTemplate.Range("A" & rowDest & ":Z" & rowDest)
+
+    ' Loop through each target column in wsTemplate row 9
+    For targetCol = 1 To targetHeaderRange.columns.Count
+        headerName = Trim(UCase(wsTemplate.Cells(9, targetCol).Value))
+
+        If Len(headerName) > 0 Then
+            ' Look up source column using the header map
+            srcCol = GetColByHeader(srcHeaderMap, headerName)
+
+            If srcCol > 0 Then
+                ' Found match - copy the entire column (data only, from row 2 onwards)
+                wsSource.Range(wsSource.Cells(2, srcCol), wsSource.Cells(srcLastRow, srcCol)).Copy _
+                    Destination:=wsDest.Cells(2, targetCol)
+                ' Copy the header as well
+                wsDest.Cells(1, targetCol).Value = wsSource.Cells(1, srcCol).Value
+            End If
+        End If
+    Next targetCol
+End Sub
+
+Function ColumnNumberToLetter(iCol As Long) As String
+    Dim vArr
+    vArr = Split(Cells(1, iCol).Address(True, False), "$")
+    ColumnNumberToLetter = vArr(0)
+End Function
+
