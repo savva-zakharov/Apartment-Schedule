@@ -668,7 +668,7 @@ Sub ProduceHQA()
     Dim levelRange As Range
     Dim levelTitle As String
 
-    Set re1 = CreateObject("VBScript.RegExp")            
+    Set re1 = CreateObject("VBScript.RegExp")
     With re1
     .Pattern = "^[A-Za-z0-9]{1,2}$"
     .IgnoreCase = True
@@ -803,7 +803,6 @@ Sub ProduceHQA()
                     
                         Call sumColumnsRowsSub(wsLong, sumColumns, changeBlock, i)
                         previousZone = currentZone
-                        Set shortChangeZone = New Collection
                         Set changeBlock = New Collection
                     End If
                 Else
@@ -1105,14 +1104,14 @@ Sub ProduceHQA()
     
     'start summing up the main stats
     
-    Call sumColumnsRowsSub(wsLong, sumColumns, changeBlock, i)
+    Call sumColumnsRowsSub(wsLong, sumColumns, changeZone, i)
     
     
     
     'fit out wsShort Totals
     
     'add a summary line
-    Call drawBorderLine(wsShort, iShort, lastCol)
+    Call drawBorderLine(wsShort, iShort, lastColShort)
         
     'add a title
     With wsShort.Cells(iShort - 1, "B")
@@ -1260,13 +1259,13 @@ Sub ProduceHQA()
 
     
     lastRow = wsLong.Cells(wsLong.rows.Count, "N").End(xlUp).row
-    wsLong.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow
+    wsLong.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow + 1
     
     lastRow = wsShort.Cells(wsShort.rows.Count, "N").End(xlUp).row
-    wsShort.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow
+    wsShort.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastColShort) & lastRow + 1
     
     lastRow = wsBlocks.Cells(wsBlocks.rows.Count, "N").End(xlUp).row
-    wsBlocks.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow
+    wsBlocks.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastColBlocks) & lastRow + 1
         
     'enable print preview
     wsLong.Activate
@@ -1616,4 +1615,6 @@ Function ColumnNumberToLetter(iCol As Long) As String
     vArr = Split(Cells(1, iCol).Address(True, False), "$")
     ColumnNumberToLetter = vArr(0)
 End Function
+
+
 
