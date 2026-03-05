@@ -28,11 +28,11 @@
 
   ;; Iterate ModelSpace
   (vlax-for blk ms
-    (if (and
-          (= (vla-get-ObjectName blk) "AcDbBlockReference")
-          (= (strcase (vla-get-EffectiveName blk)) "00-UNIT-STAMP")
-          (vla-get-HasAttributes blk)
-        )
+	(if (and
+     	 (= (vla-get-ObjectName blk) "AcDbBlockReference")
+     	 (wcmatch (strcase (vla-get-EffectiveName blk)) "00-00 UNIT *")
+     	 (vla-get-HasAttributes blk)
+  	  )
       (progn
         (setq atts (vlax-invoke blk 'GetAttributes))
 
