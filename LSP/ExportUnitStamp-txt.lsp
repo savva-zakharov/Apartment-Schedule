@@ -30,7 +30,7 @@
   (vlax-for blk ms
 	(if (and
      	 (= (vla-get-ObjectName blk) "AcDbBlockReference")
-     	 (wcmatch (strcase (vla-get-EffectiveName blk)) "00-00 UNIT *")
+     	 (wcmatch (strcase (vla-get-EffectiveName blk)) "*00-UNIT*")
      	 (vla-get-HasAttributes blk)
   	  )
       (progn

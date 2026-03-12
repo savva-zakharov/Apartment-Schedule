@@ -1,4 +1,4 @@
-(defun c:ExportUnitStamp (/ doc ss i ent obj outname file atts attTags
+(defun c:UNITOUT (/ doc ss i ent obj outname file atts attTags
                             attPairs sep quote fmt val tag)
 
   (vl-load-com)
@@ -49,7 +49,7 @@
         (setq obj (vlax-ename->vla-object ent))
 
         ;; Filter block name
-        (if (wcmatch (strcase (vla-get-EffectiveName obj)) "00-00 UNIT *")
+        (if (wcmatch (strcase (vla-get-EffectiveName obj)) "*00-UNIT*")
           (progn
             (setq atts (vlax-invoke obj 'GetAttributes))
 
