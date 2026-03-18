@@ -1,37 +1,7 @@
 Option Explicit
 
-Function ColLetterToNumber(colInput As String) As Long
-    Dim i As Long
-    Dim result As Long
-    Dim char As String
-    
-    If Trim(colInput) = "" Then
-        ColLetterToNumber = 0
-        Exit Function
-    End If
-    
-    colInput = Trim(colInput)
-    
-    ' If numeric, return as-is
-    If IsNumeric(colInput) Then
-        ColLetterToNumber = CLng(colInput)
-        Exit Function
-    End If
-    
-    ' If alphabetic, convert
-    colInput = UCase(colInput)
-    result = 0
-    
-    For i = 1 To Len(colInput)
-        char = Mid(colInput, i, 1)
-        If char < "A" Or char > "Z" Then
-            ColLetterToNumber = 0 ' Invalid character found
-            Exit Function
-        End If
-        result = result * 26 + (Asc(char) - 64)
-    Next i
-    
-    ColLetterToNumber = result
+Function ColLetterToNumber(colLetter As String) As Long
+    ColLetterToNumber = Range(colLetter & "1").Column
 End Function
 
 ' Helper function to get column number from header name using the header map
@@ -326,13 +296,13 @@ Sub ProduceHQA()
     Dim minPasCol As Long
     minPasCol = GetColByHeader(headerMap, "minPAS")
 
-    if headerMap.Exists("minAREA") Then
+    If headerMap.Exists("minAREA") Then
         wsLong.Cells(1, minAreaCol).Value = "minAREA"
     End If
-    if headerMap.Exists("minPAS") Then
+    If headerMap.Exists("minPAS") Then
         wsLong.Cells(1, minPasCol).Value = "minPAS"
     End If
-    if headerMap.Exists("minCAS") Then
+    If headerMap.Exists("minCAS") Then
         wsLong.Cells(1, areaCol).Value = "minCAS"
     End If
 
@@ -371,7 +341,7 @@ Sub ProduceHQA()
             wsLong.Cells(i, pasCol).Interior.Color = RGB(255, 0, 0)
         End If
     
-    Next i  
+    Next i
     
     If headerMap.Exists("GIFA") And headerMap.Exists("min10") Then
      
@@ -558,12 +528,12 @@ Sub ProduceHQA()
     Dim changeZone As Collection
     Set changeZone = New Collection     'collection for tracking zone changes
 
-    Dim shortChangeBlock As Collection  
+    Dim shortChangeBlock As Collection
     Set shortChangeBlock = New Collection 'collection for tracking block changes in the wsShort Schedule
     Dim shortChangeZone As Collection
     Set shortChangeZone = New Collection 'collection for tracking zone changes in the wsShort Schedule
 
-    Dim blocksChangeBlock As Collection 
+    Dim blocksChangeBlock As Collection
     Set blocksChangeBlock = New Collection 'collection for tracking block changes in the wsBlocks Schedule
     Dim blocksChangeZone As Collection
     Set blocksChangeZone = New Collection 'collection for tracking zone changes in the wsBlocks Schedule
@@ -574,73 +544,31 @@ Sub ProduceHQA()
     
     Dim blocksSumColumns As Collection
     Set blocksSumColumns = New Collection
-    if headerMap.Exists("No") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"No")
-    End If
-    if headerMap.Exists("GIFA") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"GIFA")
-    End If
-    if headerMap.Exists("minAREA") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"minAREA")
-    End If
-    if headerMap.Exists("BEDS") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"BEDS")
-    End If
-    if headerMap.Exists("PERS") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"PERS")
-    End If
-    if headerMap.Exists("DUAL") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"DUAL")
-    End If
-    if headerMap.Exists("minPAS") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"minPAS")
-    End If
-    if headerMap.Exists("PAS") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"PAS")
-    End If
-    if headerMap.Exists("minCAS") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"minCAS")
-    End If
-    if headerMap.Exists("min10") Then
-    blocksSumColumns.Add GetColByHeader(headerMap,"min10")  
-    End If
+    blocksSumColumns.Add GetColByHeader(headerMap, "No")
+    blocksSumColumns.Add GetColByHeader(headerMap, "GIFA")
+    blocksSumColumns.Add GetColByHeader(headerMap, "minAREA")
+    blocksSumColumns.Add GetColByHeader(headerMap, "BEDS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "PERS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "DUAL")
+    blocksSumColumns.Add GetColByHeader(headerMap, "minPAS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "PAS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "minCAS")
+    blocksSumColumns.Add GetColByHeader(headerMap, "min10")
     
     Dim sumColumns As Collection
     Set sumColumns = New Collection    'collection for columns to add
     
     'set up which columnds need to be summed, first columnd will use COUNTA instead if last comment is set to TRUE
-
-    if headerMap.Exists("No") Then
-    sumColumns.Add GetColByHeader(headerMap,"No")
-    End If
-    if headerMap.Exists("GIFA") Then
-    sumColumns.Add GetColByHeader(headerMap,"GIFA")
-    End If
-    If headerMap.Exists("minAREA") Then
-    sumColumns.Add GetColByHeader(headerMap,"minAREA")
-    End If
-    If headerMap.Exists("BEDS") Then
-    sumColumns.Add GetColByHeader(headerMap,"BEDS")
-    End If
-    If headerMap.Exists("PERS") Then
-    sumColumns.Add GetColByHeader(headerMap,"PERS")
-    End If
-    If headerMap.Exists("DUAL") Then
-    sumColumns.Add GetColByHeader(headerMap,"DUAL")
-    End If
-    if headerMap.Exists("minPAS") Then
-    sumColumns.Add GetColByHeader(headerMap,"minPAS")
-    End If
-    if headerMap.Exists("PAS") Then
-    sumColumns.Add GetColByHeader(headerMap,"PAS")
-    End If
-    if headerMap.Exists("minCAS") Then
-        sumColumns.Add GetColByHeader(headerMap,"minCAS")
-    End If
-    if headerMap.Exists("min10") Then
-        sumColumns.Add GetColByHeader(headerMap,"min10")
-    End If
-
+    sumColumns.Add GetColByHeader(headerMap, "No")
+    sumColumns.Add GetColByHeader(headerMap, "GIFA")
+    sumColumns.Add GetColByHeader(headerMap, "minAREA")
+    sumColumns.Add GetColByHeader(headerMap, "BEDS")
+    sumColumns.Add GetColByHeader(headerMap, "PERS")
+    sumColumns.Add GetColByHeader(headerMap, "DUAL")
+    sumColumns.Add GetColByHeader(headerMap, "minPAS")
+    sumColumns.Add GetColByHeader(headerMap, "PAS")
+    sumColumns.Add GetColByHeader(headerMap, "minCAS")
+    sumColumns.Add GetColByHeader(headerMap, "min10")
     
     'initiating the loop and strating parameters
     i = 5 'start on row 5
@@ -681,27 +609,27 @@ Sub ProduceHQA()
 
     ' Dim levelCol As Long
     ' levelCol = GetColByHeader(headerMap,"LEVEL")
-    ' Dim blockCol As Long   
+    ' Dim blockCol As Long
     ' blockCol = GetColByHeader(headerMap,"BLOCK")
     ' Dim zoneCol As Long
     ' zoneCol = GetColByHeader(headerMap,"ZONE")
     
-    previousLevel = wsLong.Cells(5, GetColByHeader(headerMap,"LEVL")).Value 'take the initial level name
-    previousBlock = wsLong.Cells(5, GetColByHeader(headerMap,"BLOK")).Value 'take the initial block name
-    previousZone = wsLong.Cells(5, GetColByHeader(headerMap,"ZONE")).Value 'take the initial zone name
+    previousLevel = wsLong.Cells(5, GetColByHeader(headerMap, "LEVL")).Value 'take the initial level name
+    previousBlock = wsLong.Cells(5, GetColByHeader(headerMap, "BLOK")).Value 'take the initial block name
+    previousZone = wsLong.Cells(5, GetColByHeader(headerMap, "ZONE")).Value 'take the initial zone name
     levelStartRow = 5 'take the initial level start postion
     blockStartRow = 5 'take the initial block start postion
     zoneStartRow = 5 'take the initial zone start postion
     shortBlockStartRow = 5
     
     Do While True
-        currentLevel = wsLong.Cells(i, GetColByHeader(headerMap,"LEVL")).Value
-        currentBlock = wsLong.Cells(i, GetColByHeader(headerMap,"BLOK")).Value
-        currentZone = wsLong.Cells(i, GetColByHeader(headerMap,"ZONE")).Value
+        currentLevel = wsLong.Cells(i, GetColByHeader(headerMap, "LEVL")).Value
+        currentBlock = wsLong.Cells(i, GetColByHeader(headerMap, "BLOK")).Value
+        currentZone = wsLong.Cells(i, GetColByHeader(headerMap, "ZONE")).Value
         
         If currentLevel <> previousLevel Or currentBlock <> previousBlock Or currentZone <> previousZone Then
             
-            'record change rows          
+            'record change rows
           
             ' Insert 3 empty rows
             wsLong.rows(i).Resize(3).Insert Shift:=xlDown
@@ -763,7 +691,7 @@ Sub ProduceHQA()
                 .Font.Bold = False
             End With
             
-            iShort = iShort + 1          
+            iShort = iShort + 1
                        
                         
             changeLevel.Add i
@@ -816,7 +744,7 @@ Sub ProduceHQA()
                                     
                     Call sumColumnsRowsSub(wsLong, sumColumns, changeLevel, i)
 
-                    if currentZone <> previousZone Then
+                    If currentZone <> previousZone Then
                         i = i + 3 ' insert extra row if zone is also changing
                         wsLong.rows(i).Resize(3).Insert Shift:=xlDown
                         changeZone.Add i
@@ -1358,7 +1286,7 @@ Sub sumColumnsSub(ws As Worksheet, columns As Collection, startRow As Long, endR
                     .Font.Bold = True
             End With
         Else
-            With ws.Cells(endRow, columns(P) + colOffset)
+            With ws.Cells(endRow, P + colOffset)
                     .Formula = "=SUM(" & columns(P) & endRow - 1 & ":" & columns(P) & startRow & ")"
                     .Font.Bold = True
             End With
@@ -1389,7 +1317,7 @@ Sub sumColumnsRowsSub(ws As Worksheet, columns As Collection, rows As Collection
        Next q
        
        
-       ws.Range(ColumnToLetter(columns(P)) & i).Formula = blockFormulaString
+       ws.Range(columns(P) & i).Formula = blockFormulaString
     
        Next P
 End Sub
@@ -1399,14 +1327,13 @@ End Sub
 Sub percentColumnsSub(ws As Worksheet, columns As Collection, row As Long, colOffset As Long)
         Dim P
         For P = 1 To columns.Count
-            If columns(P) > 0 Then
-
-                With ws.Cells(row + 1, columns(P))
-                    .Formula = "=" & columns(P) & row & "/A" & row
-                    .Font.Bold = False
-                    .NumberFormat = "0%"
-                End With
-            End if
+        
+        With ws.Cells(row + 1, columns(P))
+            .Formula = "=" & columns(P) & row & "/A" & row
+            .Font.Bold = False
+            .NumberFormat = "0%"
+        End With
+            
         Next P
 End Sub
 
@@ -1464,89 +1391,14 @@ Sub drawBorderLine(ws As Worksheet, i As Long)
     rng.Font.Bold = True
 End Sub
 
-Sub linkRow(wsSource As Worksheet, wsDestination As Worksheet, _
-            columns As Collection, rowSrc As Long, rowDest As Long, colOffset As Long)
-    
-    Dim P As Long
-    Dim colInput As Variant
-    Dim baseCol As Long
-    Dim targetCol As Long
-    Dim safeSheetName As String
-    Dim formulaString As String
-    
-    ' --- 1. OBJECT VALIDATION ---
-    If wsSource Is Nothing Or wsDestination Is Nothing Then
-        Debug.Print "Error: Source or Destination worksheet is Nothing."
-        Exit Sub
-    End If
-    
-    If columns Is Nothing Then
-        Debug.Print "Error: Columns collection is Nothing."
-        Exit Sub
-    End If
-    
-    If columns.Count = 0 Then
-        Debug.Print "Warning: Columns collection is empty."
-        Exit Sub
-    End If
-    
-    ' --- 2. ROW LIMIT VALIDATION ---
-    ' Excel max rows = 1,048,576
-    If rowSrc < 1 Or rowDest < 1 Or rowSrc > 1048576 Or rowDest > 1048576 Then
-        Debug.Print "Error: Row numbers out of range (1 to 1,048,576)."
-        Exit Sub
-    End If
-    
-    ' --- 3. PREPARE SHEET NAME FOR FORMULA ---
-    ' Escape single quotes in sheet names (e.g., "John's Data" -> "John''s Data")
-    ' Wrap in single quotes to handle spaces or special characters
-    safeSheetName = Replace(wsSource.Name, "'", "''")
-    safeSheetName = "'" & safeSheetName & "'"
-    
-    ' --- 4. ERROR HANDLING FOR PROTECTED SHEETS ---
-    On Error GoTo ErrorHandler
-    
+Sub linkRow(wsSource As Worksheet, wsDestination As Worksheet, columns As Collection, rowSrc As Long, rowDest As Long, colOffset As Long)
+    Dim P
     For P = 1 To columns.Count
-        colInput = columns(P)
-        
-        ' Get base column number from input (Letter or Number)
-        baseCol = ColLetterToNumber(CStr(colInput))
-        
-        ' If ColLetterToNumber returns 0, the input was invalid (Column 0 doesn't exist)
-        If baseCol = 0 Then
-            Debug.Print "Skipping invalid column input at index " & P & ": " & colInput
-            GoTo NextIteration
-        End If
-        
-        ' Calculate final column with offset
-        targetCol = baseCol + colOffset
-        
-        ' --- 5. COLUMN LIMIT VALIDATION ---
-        ' Excel max columns = 16,384 (XFD)
-        If targetCol < 1 Or targetCol > 16384 Then
-            Debug.Print "Skipping column index " & targetCol & " (Out of bounds)."
-            GoTo NextIteration
-        End If
-        
-        ' --- 6. WRITE FORMULA ---
-        With wsDestination.Cells(rowDest, targetCol)
-            ' Construct formula: ='SheetName'!A1
-            formulaString = "=" & safeSheetName & "!" & ColumnToLetter(colInput) & rowSrc
-            .Formula = formulaString
+        With wsDestination.Cells(rowDest, ColLetterToNumber(columns(P)) + colOffset)
+            .Formula = "='" & wsSource.Name & "'!" & columns(P) & rowSrc
             .Font.Bold = False
-            ' Optional: Prevent errors from displaying as #REF! immediately
-            ' .DisplayFormat = .Value 
         End With
-
-NextIteration:
     Next P
-    
-    On Error GoTo 0
-    Exit Sub
-
-ErrorHandler:
-    Debug.Print "Runtime Error " & Err.Number & ": " & Err.Description
-    On Error GoTo 0
 End Sub
 
 Function FormatDateWithSuffix(dt As Date) As String
@@ -1700,55 +1552,11 @@ Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, wsTemplate A
     Next targetCol
 End Sub
 
-Function ColumnToLetter(colInput As Variant) As String
-    Dim colNum As Long
-    Dim result As String
-    Dim tempNum As Long
-    
-    ' --- 1. HANDLE EMPTY OR NULL INPUT ---
-    If IsEmpty(colInput) Or IsNull(colInput) Then
-        ColumnToLetter = ""
-        Exit Function
-    End If
-    
-    ' --- 2. CONVERT TO STRING FOR VALIDATION ---
-    Dim strInput As String
-    strInput = Trim(CStr(colInput))
-    
-    If strInput = "" Then
-        ColumnToLetter = ""
-        Exit Function
-    End If
-    
-    ' --- 3. DETERMINE IF INPUT IS NUMERIC OR ALPHABETIC ---
-    If IsNumeric(strInput) Then
-        colNum = CLng(strInput)
-        
-        ' Validate column number range (1 to 16,384)
-        If colNum < 1 Or colNum > 16384 Then
-            ColumnToLetter = ""
-            Exit Function
-        End If
-    Else
-        ' Convert letter(s) to number first
-        colNum = ColLetterToNumber(strInput)
-        
-        ' If conversion failed (returned 0), invalid input
-        If colNum = 0 Then
-            ColumnToLetter = ""
-            Exit Function
-        End If
-    End If
-    
-    ' --- 4. CONVERT COLUMN NUMBER TO LETTER (Math-Based) ---
-    result = ""
-    tempNum = colNum
-    
-    Do While tempNum > 0
-        tempNum = tempNum - 1
-        result = Chr(65 + (tempNum Mod 26)) & result
-        tempNum = tempNum \ 26
-    Loop
-    
-    ColumnToLetter = result
+Function ColumnNumberToLetter(iCol As Long) As String
+    Dim vArr
+    vArr = Split(Cells(1, iCol).Address(True, False), "$")
+    ColumnNumberToLetter = vArr(0)
 End Function
+
+
+
