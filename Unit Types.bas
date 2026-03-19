@@ -21,7 +21,7 @@ Sub UnitTypes()
 
 
     For Each ws In ThisWorkbook.Worksheets
-        If InStr(1, ws.Name, "Types", vbTextCompare) > 0 Then
+        If InStr(1, ws.Name, "Types", vbTextCompare) > 0 Or InStr(1, ws.Name, "Stats", vbTextCompare) > 0 Then
             ws.Delete
         End If
     Next ws
@@ -74,11 +74,11 @@ Sub UnitTypes()
     End If
 
     ' Create a new worksheet for the unit types
-    Set wsTypes = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))    
+    Set wsTypes = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
     wsTypes.Name = wsTypes.Name & " Types " & currentDate
 
     ' Create a new worksheet for the unit stat blocks
-    Set wsStats = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))    
+    Set wsStats = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
     wsStats.Name = wsStats.Name & " Stats " & currentDate
 
     ' Build header map for wsSource (header row = 1)
@@ -172,6 +172,10 @@ Sub UnitTypes()
     pasCol = GetColByHeader(typeHeaderMap, "PAS")
     Dim minPasCol As Long
     minPasCol = GetColByHeader(typeHeaderMap, "minPAS")
+    Dim min10Col As Long
+    min10Col = GetColByHeader(typeHeaderMap, "min10")
+        
+    Dim unitBedroomArea As Double
 
     For key = LBound(typeKeys) To UBound(typeKeys)
         Dim itemArray As Variant
@@ -196,7 +200,7 @@ Sub UnitTypes()
     
             ' HOUSES
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "HOUSE") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "AA27:AA33", rng, typeHeaderMap)
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "AA27:AA34", rng, typeHeaderMap)
     
             ' DUPLEX
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "DUPLEX") > 0 _
@@ -210,6 +214,15 @@ Sub UnitTypes()
     
         End Select
 
+        If typeHeaderMap.Exists("AGBED") Then
+            unitBedroomArea = Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value) + _
+                      Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value) + _
+                      Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) + _
+                      Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value)
+            wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "AGBED")).Value = unitBedroomArea
+        End If
+
+
         ' COMPLIANCE CHECK – cell-level only
         
         ' GFA CHECK - check that the floor area matches the minimum area requirement for the unit type
@@ -217,6 +230,15 @@ Sub UnitTypes()
            And Val(wsTypes.Cells(outputRow, typeHeaderMap("GIFA")).Value) > 0 Then
             wsTypes.Cells(outputRow, minAreaCol).Interior.Color = RGB(255, 0, 0)
         End If
+
+        '10%
+        If Val(wsTypes.Cells(outputRow, areaCol).Value) > Val(wsTypes.Cells(outputRow, minAreaCol).Value) * 1.1 Then
+            wsTypes.Cells(outputRow, min10Col).Value = 1
+        Else
+            wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "min10")).Value = 0
+        End If
+
+            
 
         ' PRIVATE AMENITY AREA CHECK - check that the amenity area meets the minimum requirement for the unit type
         If Val(wsTypes.Cells(outputRow, pasCol).Value) < Val(wsTypes.Cells(outputRow, minPasCol).Value) _
@@ -227,47 +249,89 @@ Sub UnitTypes()
         outputRow = outputRow + 1
     Next key
 
-    Set rng = wsTypes.Range(wsTypes.Cells(2, 2), wsTypes.Cells(outputRow-1, typeLastCol))
+    '######################
+    '# wsTYPES FORMATTING #
+    '######################
+
+    With wsTypes.Sort
+        .SortFields.Clear
+        .SortFields.Add key:=wsTypes.Range(wsTypes.Cells(2, GetColByHeader(typeHeaderMap, "TYPE")), wsTypes.Cells(lastRow, GetColByHeader(typeHeaderMap, "TYPE"))), _
+            SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+
+        .SetRange wsTypes.Range(wsTypes.Cells(2, 1), wsTypes.Cells(lastRow, typeLastCol))
+        .Header = xlNo
+        .Apply
+    End With
+
+    Set rng = wsTypes.Range(wsTypes.Cells(2, 1), wsTypes.Cells(outputRow - 1, typeLastCol))
     Call drawBorderThickOutline(rng)
+
+    Call FormatColumnsByPattern(wsTypes, typeHeaderMap, "MIN", True, True, RGB(128, 128, 128))
+
+
+
+
+    wsTemplate.Range(wsTemplate.Cells(20, 1), wsTemplate.Cells(27, typeLastCol)).Copy
+    wsTypes.Range("A1").Insert Shift:=xlDown
+
+
 
     lastRow = wsTypes.Cells(wsSource.rows.Count, 1).End(xlUp).row
 
-    Dim iStats as Long
+    '#######################################
+    '# Creating Unit Stat Blocks Worksheet #
+    '#######################################
+
+
+    Dim iStats As Long
     iStats = 2
 
-    Dim unitTitle as String
+    Dim unitTitle As String
     ' Dim unitType as String
-    Dim unitBeds as String
-    Dim unitPers as String
-    Dim unitBedroomArea as Double
-    Dim unitStartRow as Long
+    Dim unitBeds As String
+    Dim unitPers As String
+    Dim unitStartRow As Long
 
-For i = 2 To lastRow
+For i = 10 To lastRow
     unitStartRow = iStats
-    unitTitle = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDTYPE")).Value
+    ' unitTitle = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDTYPE")).Value
     unitType = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "Type")).Value
+
+
+    Select Case True
+    
+        ' HOUSES
+        Case InStr(1, UCase(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDTYPE")).Value), "HOUSE") > 0
+            unitTitle = "House"
+        ' DUPLEX
+        Case InStr(1, UCase(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDTYPE")).Value), "DUPLEX") > 0 _
+            Or InStr(1, UCase(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDTYPE")).Value), "DUP") > 0
+            unitTitle = "Duplex"
+        ' APARTMENTS
+        Case InStr(1, UCase(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDTYPE")).Value), "APARTMENT") > 0 _
+            Or InStr(1, UCase(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDTYPE")).Value), "APT") > 0
+            unitTitle = "Apartment"
+    
+    End Select
     
     With wsStats.Range(wsStats.Cells(iStats, 1), wsStats.Cells(iStats, 3))
         .Merge
         .Value = unitTitle & " Type " & unitType
-        .Interior.Color = RGB(191, 191, 191)
-        .Font.Color = RGB(0,0, 0)
+        .Font.Color = RGB(0, 0, 0)
         .HorizontalAlignment = xlCenter
         .VerticalAlignment = xlCenter
         .Font.Bold = True
     End With
     iStats = iStats + 1
-    
 
     
     ' Sub-header row
     unitBeds = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BEDS")).Value
     unitPers = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "PERS")).Value
-    wsStats.Cells(iStats, 1).Value = unitBeds & "Bed " & unitPers & "P" & unitType
+    wsStats.Cells(iStats, 1).Value = unitBeds & "Bed / " & unitPers & "P " & unitTitle
     wsStats.Cells(iStats, 2).Value = "Target"
     wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
     wsStats.Cells(iStats, 3).Value = "Proposed"
-    wsStats.Range(wsStats.Cells(iStats, 1), wsStats.Cells(iStats, 3)).Interior.Color = RGB(217, 217, 217)
     iStats = iStats + 1
 
     ' Gross Floor Area
@@ -286,7 +350,7 @@ For i = 2 To lastRow
 
     ' Aggregate Living Area
     wsStats.Cells(iStats, 1).Value = "Aggregate Living Area - sqm"
-    wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "LVNG")).Value
+    wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINLVNG")).Value
     wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
     wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "LVNG")).Value
     iStats = iStats + 1
@@ -298,16 +362,78 @@ For i = 2 To lastRow
                       Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) + _
                       Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value)
 
-    wsStats.Cells(iStats, 2).Value = "TBC"
+    wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINAGBED")).Value
     wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
     wsStats.Cells(iStats, 3).Value = unitBedroomArea
+    iStats = iStats + 1
 
-    Set rng = wsStats.Range(wsStats.Cells(unitStartRow, 1), wsStats.Cells(iStats, 3))
-    Call drawBorderThickOutline(rng)
+    'Individual Bedroom Areas
+    If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value) > 0 Then
+        wsStats.Cells(iStats, 1).Value = "Main Bedroom - sqm"
+        wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED1")).Value
+    wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value
+        iStats = iStats + 1
+    End If
+    If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value) > 0 Then
+        If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value) >= 11.4 Then
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom area - sqm"
+        Else
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom area - sqm"
+        End If
+
+        wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED2")).Value
+        wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value
+        iStats = iStats + 1
+    End If
+    If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) > 0 Then
+        If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) >= 11.4 Then
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom area - sqm"
+        Else
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom area - sqm"
+        End If
+        wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED3")).Value
+        wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value
+        iStats = iStats + 1
+    End If
+    If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value) > 0 Then
+        If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value) >= 11.4 Then
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom area - sqm"
+        Else
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom area - sqm"
+        End If
+        wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED4")).Value
+        wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value
+        iStats = iStats + 1
+    End If
+    If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "STOR")).Value) > 0 Then
+        wsStats.Cells(iStats, 1).Value = "Min. Storage Space"
+        wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINSTOR")).Value
+        wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "STOR")).Value
+        iStats = iStats + 1
+    End If
+
+
+
+    Set rng = wsStats.Range(wsStats.Cells(unitStartRow, 1), wsStats.Cells(iStats - 1, 3))
+    Call DrawTableWithHeader(rng)
 
 
     iStats = iStats + 2
 Next i
+
+    With wsStats
+        columns(1).AutoFit
+        columns(2).AutoFit
+        columns(3).AutoFit
+        columns(2).HorizontalAlignment = xlCenter
+        columns(3).HorizontalAlignment = xlCenter
+    End With
+    
     
     
 End Sub
@@ -515,6 +641,72 @@ Function GetLastColumnFromHeaderMap(headerMap As Object) As Long
     GetLastColumnFromHeaderMap = maxCol
 End Function
 
+Sub FormatColumnsByPattern(ws As Worksheet, headerMap As Object, _
+                          searchPattern As String, _
+                          Optional applyColor As Boolean = True, _
+                          Optional applyBold As Boolean = True, _
+                          Optional fontColor As Variant = -1, _
+                          Optional headerRow As Long = 1)
+    
+    Dim key As Variant
+    Dim colNum As Long
+    Dim colValue As Variant
+    Dim formatCount As Long
+    Dim actualColor As Long
+    
+    ' --- 1. SET DEFAULT COLOR IF NOT PROVIDED ---
+    If fontColor = -1 Then
+        actualColor = RGB(83, 141, 213)  ' Blue (default)
+    Else
+        actualColor = fontColor
+    End If
+    
+    ' --- 2. VALIDATE INPUTS ---
+    If ws Is Nothing Or headerMap Is Nothing Then
+        Debug.Print "Error: Worksheet or HeaderMap is Nothing."
+        Exit Sub
+    End If
+    
+    If headerMap.Count = 0 Then
+        Debug.Print "Warning: HeaderMap is empty."
+        Exit Sub
+    End If
+    
+    If Len(Trim(searchPattern)) = 0 Then
+        Debug.Print "Error: Search pattern is empty."
+        Exit Sub
+    End If
+    
+    ' --- 3. LOOP THROUGH DICTIONARY ---
+    formatCount = 0
+    
+    For Each key In headerMap.Keys
+        If InStr(1, CStr(key), searchPattern, vbTextCompare) > 0 Then
+            
+            'colValue = headerMap(key)
+            'colNum = ColumnToNumber(colValue)
+            colNum = headerMap(key)
+            
+            If colNum > 0 And colNum <= 16384 Then
+                With ws.columns(colNum)
+                    If applyBold Then
+                        .Font.Bold = True
+                    End If
+                    
+                    If applyColor Then
+                        .Font.Color = actualColor
+                    End If
+                End With
+                
+                formatCount = formatCount + 1
+                Debug.Print "Formatted column " & colNum & " for key: " & key
+            End If
+        End If
+    Next key
+    
+    Debug.Print "Format complete: " & formatCount & " columns formatted for pattern '" & searchPattern & "'"
+End Sub
+
 Sub ApplyDwellingLookup( _
     wsData As Worksheet, _
     wsTemplate As Worksheet, _
@@ -558,8 +750,30 @@ Sub ApplyDwellingLookup( _
     If headerMap.Exists("MINCAS") Then
         wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, "AE").Value ' Min CAS
     End If
-
-
+    If headerMap.Exists("MINCAS") Then
+        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, "AE").Value ' Min CAS
+    End If
+    If headerMap.Exists("MINAGBED") Then
+        wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.row, "AG").Value ' Min Agregate Bedroom Area
+    End If
+    If headerMap.Exists("MINLVNG") Then
+        wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.row, "AF").Value ' Min Living Area
+    End If
+    If headerMap.Exists("MINSTOR") Then
+        wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.row, "AL").Value ' Min Storage Area
+    End If
+    If headerMap.Exists("MINBED1") Then
+        wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.row, "AH").Value ' Min Bedroom 1 Area
+    End If
+    If headerMap.Exists("MINBED2") Then
+        wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.row, "AI").Value ' Min Bedroom 2 Area
+    End If
+    If headerMap.Exists("MINBED3") Then
+        wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.row, "AJ").Value ' Min Bedroom 3 Area
+    End If
+    If headerMap.Exists("MINBED4") Then
+        wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.row, "AK").Value ' Min Bedroom 4 Area
+    End If
 
 End Sub
 
@@ -602,3 +816,71 @@ Sub drawBorderThickOutline(rng As Range)
         .Weight = xlMedium
     End With
 End Sub
+
+Sub DrawTableWithHeader(rng As Range)
+
+    Dim topRow As Range
+    Set topRow = rng.rows(1)
+    topRow.Interior.Color = RGB(191, 191, 191)
+    topRow.Font.Bold = True
+    topRow.Font.Color = RGB(0, 0, 0)
+    topRow.HorizontalAlignment = xlCenter
+    topRow.VerticalAlignment = xlCenter
+    
+    Set topRow = rng.rows(2)
+    topRow.Interior.Color = RGB(217, 217, 217)
+
+    Dim dataRange As Range
+
+    'add grid to everythign except the headers
+    If rng.rows.Count > 2 Then
+        Set dataRange = rng.Offset(2, 0).Resize(rng.rows.Count - 2, rng.columns.Count)
+        
+        With dataRange.Borders(xlInsideHorizontal)
+            .LineStyle = xlContinuous
+            .ColorIndex = 0
+            .TintAndShade = 0
+            .Weight = xlThin
+        End With
+        With dataRange.Borders(xlInsideVertical)
+            .LineStyle = xlContinuous
+            .ColorIndex = 0
+            .TintAndShade = 0
+            .Weight = xlThin
+        End With
+        With dataRange.Borders(xlEdgeTop)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    End If
+
+        ' Add a thick exterior border
+    With rng.Borders(xlEdgeBottom)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeRight)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeLeft)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeTop)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+
+End Sub
+
