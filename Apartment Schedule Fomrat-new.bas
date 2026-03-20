@@ -5,8 +5,57 @@ Function ColLetterToNumber(colLetter As String) As Long
 End Function
 
 ' Helper function to convert column number to letter
-Function ColNumberToLetter(colNum As Long) As String
-    ColNumberToLetter = Split(Cells(1, colNum).Address, "$")(1)
+Function ColNumberToLetter(colInput As Variant) As String
+    Dim colNum As Long
+    Dim result As String
+    Dim tempNum As Long
+    
+    ' --- 1. HANDLE EMPTY OR NULL INPUT ---
+    If IsEmpty(colInput) Or IsNull(colInput) Then
+        ColNumberToLetter = ""
+        Exit Function
+    End If
+    
+    ' --- 2. CONVERT TO STRING FOR VALIDATION ---
+    Dim strInput As String
+    strInput = Trim(CStr(colInput))
+    
+    If strInput = "" Then
+        ColNumberToLetter = ""
+        Exit Function
+    End If
+    
+    ' --- 3. DETERMINE IF INPUT IS NUMERIC OR ALPHABETIC ---
+    If IsNumeric(strInput) Then
+        colNum = CLng(strInput)
+        
+        ' Validate column number range (1 to 16,384)
+        If colNum < 1 Or colNum > 16384 Then
+            ColNumberToLetter = ""
+            Exit Function
+        End If
+    Else
+        ' Convert letter(s) to number first
+        colNum = ColLetterToNumber(strInput)
+        
+        ' If conversion failed (returned 0), invalid input
+        If colNum = 0 Then
+            ColNumberToLetter = ""
+            Exit Function
+        End If
+    End If
+    
+    ' --- 4. CONVERT COLUMN NUMBER TO LETTER (Math-Based) ---
+    result = ""
+    tempNum = colNum
+    
+    Do While tempNum > 0
+        tempNum = tempNum - 1
+        result = Chr(65 + (tempNum Mod 26)) & result
+        tempNum = tempNum \ 26
+    Loop
+    
+    ColNumberToLetter = result
 End Function
 
 ' Helper function to get column number from header name using the header map
@@ -63,7 +112,6 @@ Sub ProduceHQA()
     Dim wsSource As Worksheet
     Dim wsLong As Worksheet
     Dim wsShort As Worksheet
-    Dim wsTypes As Worksheet
     Dim wsTemplate As Worksheet
     Dim wsBlocks As Worksheet
     Dim lastRow As Long
@@ -73,9 +121,7 @@ Sub ProduceHQA()
     Dim currentLevel As Variant
     Dim previousLevel As Variant
     Dim filePath As String
-    Dim typeDict As Object
 '    Dim blockDict As Object
-    Set typeDict = CreateObject("Scripting.Dictionary")
         
     Dim currentDate As String
     currentDate = Format(Date, "yy-mm-dd") ' You can change format here
@@ -153,14 +199,9 @@ Sub ProduceHQA()
     
     ' Create a new worksheet for the short schedule output
     Set wsLong = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
-    
+
     wsLong.Name = wsLong.Name & " Long " & currentDate
-    
-    ' Create a new worksheet for the unit types
-    Set wsTypes = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
-    
-    wsTypes.Name = wsTypes.Name & " Types " & currentDate
-    
+
     ' Create a new worksheet for the blocks summary
     Set wsBlocks = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
 
@@ -183,23 +224,16 @@ Sub ProduceHQA()
     Dim headerMapShort As Object
     Set headerMapShort = BuildHeaderMap(wsTemplate, 18)
 
-    'Build header map for wsTypes (header row = 29)
-    Dim headerMapTypes As Object
-    Set headerMapTypes = BuildHeaderMap(wsTemplate, 29)
-
     'Build header map for wsBlocks (header row = 38)
     Dim headerMapBlocks As Object
     Set headerMapBlocks = BuildHeaderMap(wsTemplate, 38)
-    
+
     Dim lastCol As Long
     lastCol = mapMaxValue(headerMap)
 
     Dim lastColShort As Long
     lastColShort = mapMaxValue(headerMapShort)
 
-    Dim lastColTypes As Long
-    lastColTypes = mapMaxValue(headerMapTypes)
-    
     Dim lastColBlocks As Long
     lastColBlocks = mapMaxValue(headerMapBlocks)
     
@@ -299,31 +333,46 @@ Sub ProduceHQA()
     Dim percentCalcColumns As Collection: Set percentCalcColumns = New Collection
     percentCalcColumns.Add GetColByHeader(headerMap, "min10")
     percentCalcColumns.Add GetColByHeader(headerMap, "DUAL")
-    
+
     Dim startColLong As Long: startColLong = lastCol + 4 ' Q
     Dim startColShort As Long: startColShort = 3 ' C
     Dim colLet As Long, resColLet As Long, shortColLet As Long
     Dim bCount As Variant
-    
-    For b1 = LBound(bedKeys) To UBound(bedKeys)
-        bCount = bedKeys(b1)
-        
-        colLet = startColLong + b1
-        tally.Add bCount, colLet
-        
-        wsLong.Cells(1, colLet).Value = bCount & " BED"
-        wsBlocks.Cells(1, colLet).Value = bCount & " BED"
-        
-        sumTypeColumns.Add colLet
-        
-        resColLet = startColLong + b1 + 4
-        sumTypeResultColumns.Add resColLet
-        percentCalcColumns.Add resColLet
-        
-        shortColLet = startColShort + b1
-        shortSumTypeColumns.Add shortColLet
-        wsShort.Cells(1, shortColLet).Value = bCount & " BED"
-    Next b1
+
+    ' Only proceed if we have valid bedroom keys
+    If UBound(bedKeys) >= LBound(bedKeys) Then
+        For b1 = LBound(bedKeys) To UBound(bedKeys)
+            bCount = bedKeys(b1)
+            
+            ' Skip invalid bedroom counts
+            If Not IsNumeric(bCount) Or bCount <= 0 Then GoTo NextBed
+            
+            colLet = startColLong + b1
+            
+            ' Validate column number before using
+            If colLet > 0 Then
+                tally.Add bCount, colLet
+                
+                wsLong.Cells(1, colLet).Value = bCount & " BED"
+                wsBlocks.Cells(1, colLet).Value = bCount & " BED"
+                
+                sumTypeColumns.Add colLet
+                
+                resColLet = startColLong + b1 + 4
+                If resColLet > 0 Then
+                    sumTypeResultColumns.Add resColLet
+                    percentCalcColumns.Add resColLet
+                End If
+                
+                shortColLet = startColShort + b1
+                If shortColLet > 0 Then
+                    shortSumTypeColumns.Add shortColLet
+                    wsShort.Cells(1, shortColLet).Value = bCount & " BED"
+                End If
+            End If
+NextBed:
+        Next b1
+    End If
     
     Dim rng As Range
     
@@ -415,151 +464,8 @@ Sub ProduceHQA()
     
     'find the last row
     lastRow = wsLong.Cells(wsLong.rows.Count, "E").End(xlUp).row
-    
-    '############################
-    '## find unique unit types ##
-    '############################
-    Dim reTypes As Object
-    Set reTypes = CreateObject("VBScript.RegExp")
-    
-    Dim regexPattern As String
-    
-    ' Read the cell
-    regexPattern = Trim(wsTemplate.Range("X3").Value)
-    
-    ' Check if empty and assign default
-    If Len(regexPattern) = 0 Then
-        regexPattern = ".*"    ' default regex: matches anything
-    End If
-    
-    ' Apply to your regex object
-    With reTypes
-        .Global = False
-        .IgnoreCase = True
-        .Pattern = regexPattern
-    End With
 
-    Dim unitType
-    Dim unitKey
-    Dim tempArr
-    
-    For i = 2 To lastRow
-        unitType = wsLong.Cells(i, GetColByHeader(headerMap, "TYPE")).Value
-    
-        If Len(unitType) > 0 And reTypes.Test(unitType) Then
-    
-            ' Use regex match as the dictionary key
-            unitKey = UCase(Trim(reTypes.Execute(unitType)(0)))
-    
-            If Not typeDict.Exists(unitKey) Then
-                ' Store count = 1 and first row = i
-                typeDict.Add unitKey, Array(1, i)
-            Else
-                ' Increment count
-                tempArr = typeDict(unitKey)
-                tempArr(0) = tempArr(0) + 1
-                typeDict(unitKey) = tempArr
-            End If
-        End If
-    Next i
-    
 
-    Dim outputRow As Long
-    outputRow = 2
-    iBlocks = 2
-    
-    Dim typeKeys As Variant
-    typeKeys = typeDict.Keys
-    Dim typeItems As Variant
-    typeItems = typeDict.Items
-
-    '################################
-    '## Form wsTypes from typeDict ##
-    '################################
-
-    Dim searchKey
-    Dim k1
-    Dim k2
-    
-    Dim key
-    Dim col
-    For key = LBound(typeKeys) To UBound(typeKeys)
-    
-        ' With wsTypes.rows(outputRow)
-        '     .Value = wsLong.rows(typeItems(key)(1)).Value
-        ' End With
-        
-        wsTypes.Range(wsTypes.Cells(outputRow, 3), wsTypes.Cells(outputRow, lastCol)).Interior.Color = _
-        wsLong.Cells(typeItems(key)(1), 1).Interior.Color
-        
-        
-        For Each col In headerMapTypes.Keys
-            If headerMap.Exists(UCase(col)) Then
-                searchKey = headerMapTypes(col)
-                wsTypes.Cells(outputRow, headerMapTypes(UCase(col))).Value = wsLong.Cells(typeItems(key)(1), headerMap(UCase(col))).Value
-            End If
-        Next col
-
-        ' overwrite number column with count (same as your original code)
-        wsTypes.Cells(outputRow, GetColByHeader(headerMapTypes, "NO")).Value = typeItems(key)(0)
-        ' overwrite type column E with combined unit type
-        wsTypes.Cells(outputRow, GetColByHeader(headerMapTypes, "TYPE")).Value = typeKeys(key)
-    
-        outputRow = outputRow + 1
-    Next key
-
-        
-    lastRow = wsTypes.Cells(wsTypes.rows.Count, "E").End(xlUp).row
-    With wsTypes.Sort
-        .SortFields.Clear
-        .SortFields.Add key:=wsTypes.Range("E2:E" & lastRow), _
-            SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
-
-        .SetRange wsTypes.Range("A2:" & ColumnNumberToLetter(lastColTypes) & lastRow)
-        .Header = xlNo
-        .Apply
-    End With
-    
-    Call drawBorderThickOutline(wsTypes.Range("A2:" & ColumnNumberToLetter(lastColTypes) & lastRow))
-    
-    wsTypes.Cells(lastRow + 1, GetColByHeader(headerMapTypes, "NO")).Formula = "=SUM(" & ColNumberToLetter(GetColByHeader(headerMapTypes, "NO")) & "2:" & ColNumberToLetter(GetColByHeader(headerMapTypes, "NO")) & lastRow & ")"
-    
-    With wsTypes.columns("F").Font
-        .Color = RGB(128, 128, 128) ' Grey text
-        .Bold = True
-    End With
-    With wsTypes.columns("K").Font
-        .Color = RGB(128, 128, 128) ' Grey text
-        .Bold = True
-    End With
-    With wsTypes.columns("M").Font
-        .Color = RGB(128, 128, 128) ' Grey text
-        .Bold = True
-    End With
-    
-    wsTemplate.rows("20:27").Copy
-    wsTypes.Range("A1").Insert Shift:=xlDown
-    
-    
-    lastRow = wsTypes.Cells(wsTypes.rows.Count, "E").End(xlUp).row
-    
-    wsTypes.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastColTypes) & lastRow + 1
-    
-    
-    'enable print preview
-    wsTypes.Activate
-    ActiveWindow.View = xlPageBreakPreview
-    With wsTypes.PageSetup
-        .Zoom = False
-        .FitToPagesWide = 1
-        .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
-    End With
-    With wsTypes.PageSetup
-        .PrintTitleRows = "$7:$9"
-    End With
-           
-    
-    
     '############################################
     '## BEGIN SETUP FOR LOOPING THRUGHT LEVELS ##
     '############################################
@@ -633,6 +539,7 @@ Sub ProduceHQA()
         .Global = False
     End With
     
+    Dim regexPattern
     Dim re As Object
     Set re = CreateObject("VBScript.RegExp")
     ' Read the cell for block pattern
@@ -1210,13 +1117,13 @@ Sub ProduceHQA()
     
     'copy the headers fropm wsTemplate
 
-    
+
     wsTemplate.Range("A1:" & ColumnNumberToLetter(lastCol) & "8").Copy
     wsLong.Range("A1").Insert Shift:=xlDown
     wsTemplate.Range("BA1:BR8").Copy
     wsLong.Range(ColumnNumberToLetter(lastCol + 1) & "1").Insert Shift:=xlDown
     wsLong.rows("9:9").Delete
-    
+
     wsTemplate.Range("A10:" & ColumnNumberToLetter(lastCol) & "17").Copy
     wsShort.Range("A1").Insert Shift:=xlDown
     wsTemplate.Range("BA1:BR8").Copy
@@ -1226,47 +1133,41 @@ Sub ProduceHQA()
     wsBlocks.Range("A1").Insert Shift:=xlDown
     wsTemplate.Range("BA1:BR8").Copy
     wsBlocks.Range(ColumnNumberToLetter(lastCol + 1) & "1").Insert Shift:=xlDown
-    
-    With wsTypes.Range(ColumnNumberToLetter(lastColTypes + 1) & "1:BB8")
-        .UnMerge
-        .Clear
-        .Borders.LineStyle = xlNone
-    End With
+
     'timestamp
-    
+
     Dim d As Date
     Dim suffix As String
     Dim dateFormated As String
-    
+
     d = Date
-    
+
     Select Case Day(d)
         Case 1, 21, 31: suffix = "st"
         Case 2, 22:     suffix = "nd"
         Case 3, 23:     suffix = "rd"
         Case Else:      suffix = "th"
     End Select
-    
+
     dateFormated = Day(d) & suffix & " " & _
                            Format(d, "mmmm yyyy")
     wsLong.Range("E5").Value = dateFormated
     wsShort.Range("E5").Value = dateFormated
-    wsTypes.Range("E5").Value = dateFormated
     wsBlocks.Range("E5").Value = dateFormated
 
-    
+
     'set print areas
 
-    
+
     lastRow = wsLong.Cells(wsLong.rows.Count, "N").End(xlUp).row
     wsLong.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastCol) & lastRow + 1
-    
+
     lastRow = wsShort.Cells(wsShort.rows.Count, "N").End(xlUp).row
     wsShort.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastColShort) & lastRow + 1
-    
+
     lastRow = wsBlocks.Cells(wsBlocks.rows.Count, "N").End(xlUp).row
     wsBlocks.PageSetup.PrintArea = "A1:" & ColumnNumberToLetter(lastColBlocks) & lastRow + 1
-        
+
     'enable print preview
     wsLong.Activate
     ActiveWindow.View = xlPageBreakPreview
@@ -1278,7 +1179,7 @@ Sub ProduceHQA()
     With wsLong.PageSetup
         .PrintTitleRows = "$7:$9"
     End With
-    
+
     wsShort.Activate
     ActiveWindow.View = xlPageBreakPreview
     With wsShort.PageSetup
@@ -1286,11 +1187,11 @@ Sub ProduceHQA()
         .FitToPagesWide = 1
         .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
     End With
-    
+
     With wsShort.PageSetup
         .PrintTitleRows = "$7:$9"
     End With
-    
+
     wsBlocks.Activate
     ActiveWindow.View = xlPageBreakPreview
     With wsBlocks.PageSetup
@@ -1298,48 +1199,50 @@ Sub ProduceHQA()
         .FitToPagesWide = 1
         .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
     End With
-    
+
     With wsBlocks.PageSetup
         .PrintTitleRows = "$7:$9"
     End With
-    
+
 
     wsLong.Activate
     Application.CutCopyMode = False
     wsLong.Range("A1").Select
-    
+
     wsShort.Activate
     Application.CutCopyMode = False
     wsShort.Range("A1").Select
-    
-    wsTypes.Activate
-    Application.CutCopyMode = False
-    wsTypes.Range("A1").Select
-    
+
     ' Restore application settings
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
     Application.DisplayAlerts = True
-    
+
 End Sub
 
 
 Sub sumColumnsSub(ws As Worksheet, columns As Collection, startRow As Long, endRow As Long, colOffset As Long, Optional countFirst As Boolean = False)
-        Dim P
-        For P = 1 To columns.Count
+        Dim P As Long
+        Dim colNum As Long
         
-        If P = 1 And countFirst = True Then
-            With ws.Cells(endRow, columns(P) + colOffset)
-                    .Formula = "=COUNTA(" & ColNumberToLetter(columns(P)) & endRow - 1 & ":" & ColNumberToLetter(columns(P)) & startRow & ")"
-                    .Font.Bold = True
-            End With
-        Else
-            With ws.Cells(endRow, columns(P) + colOffset)
-                    .Formula = "=SUM(" & ColNumberToLetter(columns(P)) & endRow - 1 & ":" & ColNumberToLetter(columns(P)) & startRow & ")"
-                    .Font.Bold = True
-            End With
-        End If
+        For P = 1 To columns.Count
+            colNum = columns(P)
             
+            ' Skip zero or invalid column numbers
+            If colNum <= 0 Then GoTo NextCol
+            
+            If P = 1 And countFirst = True Then
+                With ws.Cells(endRow, colNum + colOffset)
+                        .Formula = "=COUNTA(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                        .Font.Bold = True
+                End With
+            Else
+                With ws.Cells(endRow, colNum + colOffset)
+                        .Formula = "=SUM(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                        .Font.Bold = True
+                End With
+            End If
+NextCol:
         Next P
 End Sub
 
@@ -1634,6 +1537,8 @@ Function ColumnNumberToLetter(iCol As Long) As String
     vArr = Split(Cells(1, iCol).Address(True, False), "$")
     ColumnNumberToLetter = vArr(0)
 End Function
+
+
 
 
 

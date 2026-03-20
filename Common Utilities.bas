@@ -1,0 +1,753 @@
+Option Explicit
+
+' ============================================================================
+' COMMON UTILITY FUNCTIONS FOR APARTMENT SCHEDULE
+' Shared helper functions used across multiple modules
+' ============================================================================
+
+' ----------------------------------------------------------------------------
+' Column Conversion Functions
+' ----------------------------------------------------------------------------
+
+' Convert column letter to number (e.g., "A" -> 1, "Z" -> 26, "AA" -> 27)
+Function ColLetterToNumber(colInput As String) As Long
+    Dim i As Long
+    Dim result As Long
+    Dim char As String
+
+    If Trim(colInput) = "" Then
+        ColLetterToNumber = 0
+        Exit Function
+    End If
+
+    colInput = Trim(colInput)
+
+    ' If numeric, return as-is
+    If IsNumeric(colInput) Then
+        ColLetterToNumber = CLng(colInput)
+        Exit Function
+    End If
+
+    ' If alphabetic, convert
+    colInput = UCase(colInput)
+    result = 0
+
+    For i = 1 To Len(colInput)
+        char = Mid(colInput, i, 1)
+        If char < "A" Or char > "Z" Then
+            ColLetterToNumber = 0 ' Invalid character found
+            Exit Function
+        End If
+        result = result * 26 + (Asc(char) - 64)
+    Next i
+
+    ColLetterToNumber = result
+End Function
+
+' Convert column number to letter (e.g., 1 -> "A", 26 -> "Z", 27 -> "AA")
+Function ColNumberToLetter(colInput As Variant) As String
+    Dim colNum As Long
+    Dim result As String
+    Dim tempNum As Long
+
+    ' Handle empty or null input
+    If IsEmpty(colInput) Or IsNull(colInput) Then
+        ColNumberToLetter = ""
+        Exit Function
+    End If
+
+    ' Convert to string for validation
+    Dim strInput As String
+    strInput = Trim(CStr(colInput))
+
+    If strInput = "" Then
+        ColNumberToLetter = ""
+        Exit Function
+    End If
+
+    ' Determine if input is numeric or alphabetic
+    If IsNumeric(strInput) Then
+        colNum = CLng(strInput)
+        ' Validate column number range (1 to 16,384)
+        If colNum < 1 Or colNum > 16384 Then
+            ColNumberToLetter = ""
+            Exit Function
+        End If
+    Else
+        ' Convert letter(s) to number first
+        colNum = ColLetterToNumber(strInput)
+        ' If conversion failed (returned 0), invalid input
+        If colNum = 0 Then
+            ColNumberToLetter = ""
+            Exit Function
+        End If
+    End If
+
+    ' Convert column number to letter (math-based)
+    result = ""
+    tempNum = colNum
+
+    Do While tempNum > 0
+        tempNum = tempNum - 1
+        result = Chr(65 + (tempNum Mod 26)) & result
+        tempNum = tempNum \ 26
+    Loop
+
+    ColNumberToLetter = result
+End Function
+
+' ----------------------------------------------------------------------------
+' Header Map Functions
+' ----------------------------------------------------------------------------
+
+' Build a dictionary mapping uppercase header names to column numbers
+' Scans columns 1-100 for non-empty header cells
+Function BuildHeaderMap(ws As Worksheet, headerRow As Long) As Object
+    Dim headerMap As Object
+    Set headerMap = CreateObject("Scripting.Dictionary")
+
+    Dim col As Long
+    Dim headerName As String
+
+    ' Validate inputs
+    If ws Is Nothing Then
+        Set BuildHeaderMap = headerMap
+        Exit Function
+    End If
+
+    If headerRow < 1 Or headerRow > 1048576 Then
+        Set BuildHeaderMap = headerMap
+        Exit Function
+    End If
+
+    On Error Resume Next
+    For col = 1 To 100
+        If ws.Cells(headerRow, col).Value <> "" Then
+            headerName = UCase(Trim(ws.Cells(headerRow, col).Value))
+            If Not headerMap.Exists(headerName) Then
+                headerMap.Add headerName, col
+            End If
+        End If
+    Next col
+    On Error GoTo 0
+
+    Set BuildHeaderMap = headerMap
+End Function
+
+' Get column number from header name using the header map
+' Returns -1 if header not found (invalid column - must be checked before use)
+Function GetColByHeader(headerMap As Object, headerName As String) As Long
+    If headerMap Is Nothing Then
+        GetColByHeader = -1
+        Exit Function
+    End If
+
+    If headerMap.Exists(UCase(headerName)) Then
+        GetColByHeader = headerMap(UCase(headerName))
+    Else
+        GetColByHeader = -1
+    End If
+End Function
+
+' Get the maximum column number from a header map
+Function GetLastColumnFromHeaderMap(headerMap As Object) As Long
+    Dim key As Variant
+    Dim colNum As Long
+    Dim maxCol As Long
+    Dim colValue As Variant
+
+    ' Validate dictionary
+    If headerMap Is Nothing Then
+        GetLastColumnFromHeaderMap = 0
+        Exit Function
+    End If
+
+    If headerMap.Count = 0 Then
+        GetLastColumnFromHeaderMap = 0
+        Exit Function
+    End If
+
+    ' Loop through all values and track maximum
+    maxCol = 0
+
+    For Each key In headerMap.Keys
+        colValue = headerMap(key)
+        colNum = colValue
+
+        If colNum > maxCol Then
+            maxCol = colNum
+        End If
+    Next key
+
+    GetLastColumnFromHeaderMap = maxCol
+End Function
+
+' Get maximum value from a dictionary
+Function mapMaxValue(dict As Object) As Variant
+    Dim key As Variant
+    Dim maxValue As Variant
+    Dim firstKey As Variant
+
+    If dict Is Nothing Then
+        mapMaxValue = 0
+        Exit Function
+    End If
+
+    If dict.Count = 0 Then
+        mapMaxValue = 0
+        Exit Function
+    End If
+
+    firstKey = dict.Keys()(0)
+    maxValue = dict(firstKey)
+
+    For Each key In dict.Keys
+        If dict(key) > maxValue Then
+            maxValue = dict(key)
+        End If
+    Next key
+
+    mapMaxValue = maxValue
+End Function
+
+' ----------------------------------------------------------------------------
+' Date Functions
+' ----------------------------------------------------------------------------
+
+' Format date with ordinal suffix (e.g., "1st January 2024")
+Function FormatDateWithSuffix(dt As Date) As String
+    Dim dayNum As Integer
+    Dim suffix As String
+
+    dayNum = Day(dt)
+
+    ' Determine the suffix
+    Select Case dayNum
+        Case 1, 21, 31: suffix = "st"
+        Case 2, 22: suffix = "nd"
+        Case 3, 23: suffix = "rd"
+        Case Else: suffix = "th"
+    End Select
+
+    FormatDateWithSuffix = dayNum & suffix & " " & Format(dt, "mmmm yyyy")
+End Function
+
+' ----------------------------------------------------------------------------
+' Color Functions
+' ----------------------------------------------------------------------------
+
+' Convert hex color to VBA Long color (e.g., "#FF5733" -> RGB value)
+Function HEX(hexColor As String) As Long
+    Dim r As Integer, g As Integer, b As Integer
+
+    ' Remove "#" if it exists
+    If Left(hexColor, 1) = "#" Then
+        hexColor = Mid(hexColor, 2)
+    End If
+
+    ' Validate hex color length
+    If Len(hexColor) <> 6 Then
+        Err.Raise vbObjectError + 513, , "Invalid hex color format. Must be 6 characters like '#FF5733'."
+    End If
+
+    ' Convert hex to RGB
+    On Error GoTo ErrorHandler
+    r = CInt("&H" & Mid(hexColor, 1, 2))
+    g = CInt("&H" & Mid(hexColor, 3, 2))
+    b = CInt("&H" & Mid(hexColor, 5, 2))
+    HEX = RGB(r, g, b)
+    Exit Function
+
+ErrorHandler:
+    HEX = RGB(255, 255, 255) ' fallback to white on error
+    MsgBox "Invalid HEX color: " & hexColor, vbExclamation
+End Function
+
+' ----------------------------------------------------------------------------
+' Formatting Functions
+' ----------------------------------------------------------------------------
+
+' Format columns by header pattern (e.g., "MIN" formats all columns with "MIN" in header)
+Sub FormatColumnsByPattern(ws As Worksheet, headerMap As Object, _
+                          searchPattern As String, _
+                          Optional applyColor As Boolean = True, _
+                          Optional applyBold As Boolean = True, _
+                          Optional fontColor As Variant = -1, _
+                          Optional headerRow As Long = 1)
+
+    Dim key As Variant
+    Dim colNum As Long
+    Dim formatCount As Long
+    Dim actualColor As Long
+
+    ' Set default color if not provided
+    If fontColor = -1 Then
+        actualColor = RGB(83, 141, 213)  ' Blue (default)
+    Else
+        actualColor = fontColor
+    End If
+
+    ' Validate inputs
+    If ws Is Nothing Or headerMap Is Nothing Then
+        Debug.Print "Error: Worksheet or HeaderMap is Nothing."
+        Exit Sub
+    End If
+
+    If headerMap.Count = 0 Then
+        Debug.Print "Warning: HeaderMap is empty."
+        Exit Sub
+    End If
+
+    If Len(Trim(searchPattern)) = 0 Then
+        Debug.Print "Error: Search pattern is empty."
+        Exit Sub
+    End If
+
+    ' Loop through dictionary and format matching columns
+    formatCount = 0
+
+    For Each key In headerMap.Keys
+        If InStr(1, CStr(key), searchPattern, vbTextCompare) > 0 Then
+            colNum = headerMap(key)
+
+            If colNum >= 1 And colNum <= 16384 Then
+                With ws.Columns(colNum)
+                    If applyBold Then
+                        .Font.Bold = True
+                    End If
+
+                    If applyColor Then
+                        .Font.Color = actualColor
+                    End If
+                End With
+
+                formatCount = formatCount + 1
+                Debug.Print "Formatted column " & colNum & " for key: " & key
+            End If
+        End If
+    Next key
+
+    Debug.Print "Format complete: " & formatCount & " columns formatted for pattern '" & searchPattern & "'"
+End Sub
+
+' ----------------------------------------------------------------------------
+' Border Functions
+' ----------------------------------------------------------------------------
+
+' Draw thick outline border around a range
+Sub drawBorderThickOutline(rng As Range)
+    On Error Resume Next
+    
+    With rng.Borders(xlInsideHorizontal)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlThin
+    End With
+    With rng.Borders(xlInsideVertical)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlThin
+    End With
+    ' Add thick exterior border
+    With rng.Borders(xlEdgeBottom)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeRight)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeLeft)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeTop)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    
+    On Error GoTo 0
+End Sub
+
+' Draw a horizontal line across a row
+Sub drawBorderLine(ws As Worksheet, i As Long, c As Long)
+    Dim rng As Range
+    Set rng = ws.Range(ws.Cells(i, "A"), ws.Cells(i, c))
+
+    On Error Resume Next
+    With rng.Borders(xlEdgeTop)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlThick
+    End With
+    On Error GoTo 0
+
+    rng.Font.Bold = True
+End Sub
+
+' Draw a table with header rows (first two rows styled differently)
+Sub DrawTableWithHeader(rng As Range)
+    Dim topRow As Range
+    Dim dataRange As Range
+
+    On Error Resume Next
+
+    ' First header row - darker grey
+    Set topRow = rng.Rows(1)
+    topRow.Interior.Color = RGB(191, 191, 191)
+    topRow.Font.Bold = True
+    topRow.Font.Color = RGB(0, 0, 0)
+    topRow.HorizontalAlignment = xlCenter
+    topRow.VerticalAlignment = xlCenter
+
+    ' Second header row - lighter grey
+    Set topRow = rng.Rows(2)
+    topRow.Interior.Color = RGB(217, 217, 217)
+
+    ' Add grid to everything except the headers
+    If rng.Rows.Count > 2 Then
+        Set dataRange = rng.Offset(2, 0).Resize(rng.Rows.Count - 2, rng.Columns.Count)
+
+        With dataRange.Borders(xlInsideHorizontal)
+            .LineStyle = xlContinuous
+            .ColorIndex = 0
+            .TintAndShade = 0
+            .Weight = xlThin
+        End With
+        With dataRange.Borders(xlInsideVertical)
+            .LineStyle = xlContinuous
+            .ColorIndex = 0
+            .TintAndShade = 0
+            .Weight = xlThin
+        End With
+        With dataRange.Borders(xlEdgeTop)
+            .LineStyle = xlContinuous
+            .ColorIndex = 0
+            .TintAndShade = 0
+            .Weight = xlMedium
+        End With
+    End If
+
+    ' Exterior border
+    With rng.Borders(xlEdgeBottom)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeRight)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeLeft)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+    With rng.Borders(xlEdgeTop)
+        .LineStyle = xlContinuous
+        .ColorIndex = 0
+        .TintAndShade = 0
+        .Weight = xlMedium
+    End With
+
+    On Error GoTo 0
+End Sub
+
+' ----------------------------------------------------------------------------
+' Data Copy Functions
+' ----------------------------------------------------------------------------
+
+' Copy cells from source to destination by matching headers
+Sub copyCellsByHeader(wsSource As Worksheet, wsDest As Worksheet, _
+                     srcRow As Long, targetRow As Long, _
+                     srcHeaderMap As Object, targetHeaderMap As Object)
+
+    Dim key As Variant
+    Dim srcCol As Long
+    Dim tgtCol As Long
+    Dim matchCount As Long
+
+    ' Validate objects
+    If wsSource Is Nothing Or wsDest Is Nothing Then
+        Debug.Print "Error: Worksheet object is Nothing."
+        Exit Sub
+    End If
+
+    If srcHeaderMap Is Nothing Or targetHeaderMap Is Nothing Then
+        Debug.Print "Error: Header map dictionary is Nothing."
+        Exit Sub
+    End If
+
+    ' Validate rows
+    If srcRow < 1 Or targetRow < 1 Or srcRow > 1048576 Or targetRow > 1048576 Then
+        Debug.Print "Error: Row numbers out of range."
+        Exit Sub
+    End If
+
+    ' Performance settings
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    On Error GoTo ErrorHandler
+
+    ' Loop and copy
+    For Each key In srcHeaderMap.Keys
+        ' Only copy if header exists in both maps
+        If targetHeaderMap.Exists(key) Then
+            ' Convert dictionary values (e.g., "A" or 1) to Column Numbers
+            srcCol = ColLetterToNumber(srcHeaderMap(key))
+            tgtCol = ColLetterToNumber(targetHeaderMap(key))
+
+            ' Validate columns are within Excel bounds (1 to 16,384)
+            If srcCol >= 1 And tgtCol >= 1 And srcCol <= 16384 And tgtCol <= 16384 Then
+                wsDest.Cells(targetRow, tgtCol).Value2 = wsSource.Cells(srcRow, srcCol).Value2
+                matchCount = matchCount + 1
+            Else
+                Debug.Print "Skipping key '" & key & "': Invalid column mapping."
+            End If
+        End If
+    Next key
+
+    ' Restore settings
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Debug.Print "Copy complete: " & matchCount & " columns matched."
+    Exit Sub
+
+ErrorHandler:
+    Debug.Print "Runtime Error " & Err.Number & ": " & Err.Description
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+End Sub
+
+' Copy columns from wsSource to wsDest by matching headers
+Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, _
+                       wsTemplate As Worksheet, rowSource As Long, rowDest As Long)
+
+    Dim srcLastRow As Long
+    Dim targetCol As Long
+    Dim srcHeaderMap As Object
+    Dim targetHeaderRange As Range
+    Dim headerName As String
+    Dim srcCol As Long
+
+    ' Get the last used row in wsSource
+    srcLastRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+
+    ' Build header map for wsSource
+    Set srcHeaderMap = BuildHeaderMap(wsSource, rowSource)
+
+    ' Define the target header range in wsTemplate
+    Set targetHeaderRange = wsTemplate.Range("A" & rowDest & ":Z" & rowDest)
+
+    ' Loop through each target column in wsTemplate
+    For targetCol = 1 To targetHeaderRange.Columns.Count
+        headerName = Trim(UCase(wsTemplate.Cells(rowDest, targetCol).Value))
+
+        If Len(headerName) > 0 Then
+            ' Look up source column using the header map
+            srcCol = GetColByHeader(srcHeaderMap, headerName)
+
+            If srcCol >= 1 Then
+                ' Found match - copy the entire column (data only, from row 2 onwards)
+                wsSource.Range(wsSource.Cells(2, srcCol), wsSource.Cells(srcLastRow, srcCol)).Copy _
+                    Destination:=wsDest.Cells(2, targetCol)
+                ' Copy the header as well
+                wsDest.Cells(1, targetCol).Value = wsSource.Cells(1, srcCol).Value
+            End If
+        End If
+    Next targetCol
+End Sub
+
+' ----------------------------------------------------------------------------
+' Sum and Calculation Functions
+' ----------------------------------------------------------------------------
+
+' Add SUM/COUNTA formulas to columns
+Sub sumColumnsSub(ws As Worksheet, columns As Collection, _
+                 startRow As Long, endRow As Long, _
+                 colOffset As Long, Optional countFirst As Boolean = False)
+
+    Dim P As Long
+    Dim colNum As Long
+
+    For P = 1 To columns.Count
+        colNum = columns(P)
+
+        ' Skip invalid column numbers (must be >= 1)
+        If colNum < 1 Then GoTo NextCol
+
+        If P = 1 And countFirst = True Then
+            With ws.Cells(endRow, colNum + colOffset)
+                .Formula = "=COUNTA(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                .Font.Bold = True
+            End With
+        Else
+            With ws.Cells(endRow, colNum + colOffset)
+                .Formula = "=SUM(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                .Font.Bold = True
+            End With
+        End If
+NextCol:
+    Next P
+End Sub
+
+' Add SUM formulas across multiple rows (for zone/block summaries)
+Sub sumColumnsRowsSub(ws As Worksheet, columns As Collection, _
+                     rows As Collection, i As Long)
+
+    Dim P As Long
+    Dim q As Long
+    Dim colNum As Long
+    Dim colLetter As String
+
+    If rows.Count > 0 Then
+        For P = 1 To columns.Count
+            colNum = columns(P)
+            colLetter = ColNumberToLetter(colNum)
+
+            ' Declare the formula and start writing it
+            Dim blockFormulaString As String
+            blockFormulaString = "=SUM("
+
+            For q = 1 To rows.Count
+                If q = rows.Count Then
+                    ' For the last item, don't add a comma after it
+                    blockFormulaString = blockFormulaString & colLetter & rows(q) & ")"
+                Else
+                    ' For all other items, add a comma between cell references
+                    blockFormulaString = blockFormulaString & colLetter & rows(q) & ","
+                End If
+            Next q
+
+            ws.Cells(i, colNum).Formula = blockFormulaString
+        Next P
+    End If
+End Sub
+
+' Add percentage formulas to columns
+Sub percentColumnsSub(ws As Worksheet, columns As Collection, _
+                     row As Long, colOffset As Long)
+
+    Dim P As Long
+
+    For P = 1 To columns.Count
+        With ws.Cells(row + 1, columns(P))
+            .Formula = "=" & ColNumberToLetter(columns(P)) & row & "/A" & row
+            .Font.Bold = False
+            .NumberFormat = "0%"
+        End With
+    Next P
+End Sub
+
+' Link row from source to destination with formulas
+Sub linkRow(wsSource As Worksheet, wsDestination As Worksheet, _
+           columns As Collection, rowSrc As Long, _
+           rowDest As Long, colOffset As Long)
+
+    Dim P As Long
+    Dim colNum As Long
+    Dim colLetter As String
+
+    For P = 1 To columns.Count
+        colNum = columns(P) + colOffset
+        colLetter = ColNumberToLetter(colNum)
+
+        With wsDestination.Cells(rowDest, colNum)
+            .Formula = "='" & wsSource.Name & "'!" & colLetter & rowSrc
+            .Font.Bold = False
+        End With
+    Next P
+End Sub
+
+' ----------------------------------------------------------------------------
+' Dwelling Lookup Function
+' ----------------------------------------------------------------------------
+
+' Apply dwelling type lookup from template (colors and minimum standards)
+Sub ApplyDwellingLookup(wsData As Worksheet, _
+    wsTemplate As Worksheet, _
+    rowNum As Long, _
+    lookupRange As String, _
+    rngRow As Range, _
+    headerMap As Object, _
+    tempHeaderMap As Object)
+
+    Dim bedCount As Long
+    Dim personCount As Long
+    Dim lookupKey As String
+    Dim foundRow As Range
+
+    bedCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "BEDS")).Value
+    personCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "PERS")).Value
+
+    lookupKey = bedCount & "b " & personCount & "p"
+
+    On Error Resume Next
+    Set foundRow = wsTemplate.Range(lookupRange).Find( _
+                        What:=lookupKey, _
+                        LookAt:=xlWhole, _
+                        MatchCase:=False)
+    On Error GoTo 0
+
+    If foundRow Is Nothing Then
+        rngRow.Interior.Color = RGB(255, 0, 0)
+        Exit Sub
+    End If
+
+    ' Apply template colour
+    rngRow.Interior.Color = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "COLOUR")).Interior.Color
+
+    ' Set minimums
+    If headerMap.Exists("MINAREA") Then
+        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINAREA")).Value
+    End If
+    If headerMap.Exists("MINPAS") Then
+        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINPAS")).Value
+    End If
+    If headerMap.Exists("MINCAS") Then
+        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINCAS")).Value
+    End If
+    If headerMap.Exists("MINAGBED") Then
+        wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINAGBED")).Value
+    End If
+    If headerMap.Exists("MINLVNG") Then
+        wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINLVNG")).Value
+    End If
+    If headerMap.Exists("MINSTOR") Then
+        wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINSTOR")).Value
+    End If
+    If headerMap.Exists("MINBED1") Then
+        wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED1")).Value
+    End If
+    If headerMap.Exists("MINBED2") Then
+        wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED2")).Value
+    End If
+    If headerMap.Exists("MINBED3") Then
+        wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED3")).Value
+    End If
+    If headerMap.Exists("MINBED4") Then
+        wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED4")).Value
+    End If
+    If headerMap.Exists("MINBED5") Then
+        wsData.Cells(rowNum, headerMap("MINBED5")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED5")).Value
+    End If
+    If headerMap.Exists("MINMAIN") Then
+        wsData.Cells(rowNum, headerMap("MINMAIN")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINMAIN")).Value
+    End If
+
+End Sub
