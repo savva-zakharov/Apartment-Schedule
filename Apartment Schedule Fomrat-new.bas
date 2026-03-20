@@ -183,13 +183,13 @@ Sub ProduceHQA()
     Dim headerMapShort As Object
     Set headerMapShort = BuildHeaderMap(wsTemplate, 18)
 
-    'Build header map for wsTypes (header row = 28)
+    'Build header map for wsTypes (header row = 29)
     Dim headerMapTypes As Object
-    Set headerMapTypes = BuildHeaderMap(wsTemplate, 28)
+    Set headerMapTypes = BuildHeaderMap(wsTemplate, 29)
 
-    'Build header map for wsBlocks (header row = 37)
+    'Build header map for wsBlocks (header row = 38)
     Dim headerMapBlocks As Object
-    Set headerMapBlocks = BuildHeaderMap(wsTemplate, 37)
+    Set headerMapBlocks = BuildHeaderMap(wsTemplate, 38)
     
     Dim lastCol As Long
     lastCol = mapMaxValue(headerMap)
@@ -358,17 +358,17 @@ Sub ProduceHQA()
     
             ' HOUSES
             Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "HOUSE") > 0
-                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA27:AA33", rng, tally, headerMap)
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "A81:89", rng, tally, headerMap)
     
             ' DUPLEX
             Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "DUPLEX") > 0 _
               Or InStr(1, UCase(wsLong.Cells(i, descCol).Value), "DUP") > 0
-                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA17:AA22", rng, tally, headerMap)
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "A71:A76", rng, tally, headerMap)
     
             ' APARTMENTS
             Case InStr(1, UCase(wsLong.Cells(i, descCol).Value), "APARTMENT") > 0 _
               Or InStr(1, UCase(wsLong.Cells(i, descCol).Value), "APT") > 0
-                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "AA8:AA13", rng, tally, headerMap)
+                Call ApplyDwellingLookup(wsLong, wsTemplate, i, "A62:A67", rng, tally, headerMap)
     
         End Select
     
@@ -1503,15 +1503,13 @@ ErrorHandler:
     MsgBox "Invalid HEX color: " & hexColor, vbExclamation
 End Function
 
-Public Sub ApplyDwellingLookup( _
-    wsData As Worksheet, _
+Sub ApplyDwellingLookup(wsData As Worksheet, _
     wsTemplate As Worksheet, _
     rowNum As Long, _
     lookupRange As String, _
     rngRow As Range, _
-    tallyMap As Object, _
-    headerMap As Object _
-)
+    headerMap As Object, _
+    tempHeaderMap As Object)
 
     Dim bedCount As Long
     Dim personCount As Long
@@ -1519,8 +1517,8 @@ Public Sub ApplyDwellingLookup( _
     Dim foundRow As Range
     Dim tallyCol As Long
 
-    bedCount = wsData.Cells(rowNum, headerMap("BEDS")).Value
-    personCount = wsData.Cells(rowNum, headerMap("PERS")).Value
+    bedCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "BEDS")).Value
+    personCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "PERS")).Value
 
     lookupKey = bedCount & "b " & personCount & "p"
 
@@ -1535,23 +1533,44 @@ Public Sub ApplyDwellingLookup( _
     End If
 
     ' Apply template colour
-    rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, "AB").Interior.Color
+    rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "COLOUR")).Interior.Color
 
     ' Set minimums
     If headerMap.Exists("MINAREA") Then
-        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.row, "AC").Value ' Min Area
+        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINAREA")).Value ' Min Area
     End If
     If headerMap.Exists("MINPAS") Then
-        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.row, "AD").Value ' Min PAS
+        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINPAS")).Value ' Min PAS
     End If
     If headerMap.Exists("MINCAS") Then
-        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, "AE").Value ' Min CAS
+        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINCAS")).Value ' Min CAS
     End If
-
-    ' Tally
-    If tallyMap.Exists(bedCount) Then
-        tallyCol = tallyMap(bedCount)
-        wsData.Cells(rowNum, tallyCol).Value = 1
+    If headerMap.Exists("MINAGBED") Then
+        wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINAGBED")).Value ' Min Agregate Bedroom Area
+    End If
+    If headerMap.Exists("MINLVNG") Then
+        wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINLVNG")).Value ' Min Living Area
+    End If
+    If headerMap.Exists("MINSTOR") Then
+        wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINSTOR")).Value ' Min Storage Area
+    End If
+    If headerMap.Exists("MINBED1") Then
+        wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED1")).Value ' Min Bedroom 1 Area
+    End If
+    If headerMap.Exists("MINBED2") Then
+        wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED2")).Value ' Min Bedroom 2 Area
+    End If
+    If headerMap.Exists("MINBED3") Then
+        wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED3")).Value ' Min Bedroom 3 Area
+    End If
+    If headerMap.Exists("MINBED4") Then
+        wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED4")).Value ' Min Bedroom 4 Area
+    End If
+    If headerMap.Exists("MINBED5") Then
+        wsData.Cells(rowNum, headerMap("MINBED5")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED5")).Value ' Min Bedroom 5 Area
+    End If
+    If headerMap.Exists("MINMAIN") Then
+        wsData.Cells(rowNum, headerMap("MINMAIN")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINMAIN")).Value ' Min Main Area
     End If
 
 End Sub
@@ -1615,6 +1634,8 @@ Function ColumnNumberToLetter(iCol As Long) As String
     vArr = Split(Cells(1, iCol).Address(True, False), "$")
     ColumnNumberToLetter = vArr(0)
 End Function
+
+
 
 
 

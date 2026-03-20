@@ -86,13 +86,13 @@ Sub UnitTypes()
     Dim sourceHeaderMap As Object
     Set sourceHeaderMap = BuildHeaderMap(wsSource, 1)
 
-    ' Build header map for wsTypes (header row = 28)
+    ' Build header map for wsTypes (header row = 29)
     Dim typeHeaderMap As Object
-    Set typeHeaderMap = BuildHeaderMap(wsTemplate, 28)
+    Set typeHeaderMap = BuildHeaderMap(wsTemplate, 29)
 
-        ' Build header map for wsTypes (header row = 28)
+        ' Build header map for wsTypes (header row = 61)
     Dim tempHeaderMap As Object
-    Set tempHeaderMap = BuildHeaderMap(wsTemplate, 60)
+    Set tempHeaderMap = BuildHeaderMap(wsTemplate, 61)
 
     Dim typeLastCol As Long
     typeLastCol = GetLastColumnFromHeaderMap(typeHeaderMap)
@@ -181,6 +181,12 @@ Sub UnitTypes()
     min10Col = GetColByHeader(typeHeaderMap, "min10")
         
     Dim unitBedroomArea As Double
+    Dim percentFormula As String
+    Dim totalUnits As Long
+
+    For Each key In typeKeys
+        totalUnits = totalUnits + typeDict(key)(0)
+    Next key
 
     For key = LBound(typeKeys) To UBound(typeKeys)
         Dim itemArray As Variant
@@ -199,42 +205,48 @@ Sub UnitTypes()
         ' overwrite column E with combined unit type
         wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "Type")).Value = typeKeys(key)
 
+        ' CALCULATE UNIT %
+        If TypeHeaderMap.Exists("%") Then
+            wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "%")).Value =  Format(typeItems(key)(0) / totalUnits, "0%")
+
+        End If
+
         Set rng = wsTypes.Range(wsTypes.Cells(outputRow, 3), wsTypes.Cells(outputRow, typeLastCol))
     
         Select Case True
     
             ' HOUSES
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "HOUSE") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A80:A88", rng, typeHeaderMap, tempHeaderMap)
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A81:A89", rng, typeHeaderMap, tempHeaderMap)
     
             ' DUPLEX
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "DUPLEX") > 0 _
               Or InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "DUP") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A69:A75", rng, typeHeaderMap, tempHeaderMap)
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A71:A76", rng, typeHeaderMap, tempHeaderMap)
     
             ' APARTMENTS
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "APARTMENT") > 0 _
               Or InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "APT") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A61:A66", rng, typeHeaderMap, tempHeaderMap)
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A62:A67", rng, typeHeaderMap, tempHeaderMap)
     
         End Select
 
         If typeHeaderMap.Exists("AGBED") Then
             unitBedroomArea = 0
             If typeHeaderMap.Exists("BED1") Then
-                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value)
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "BED1")).Value)
             End If
             If typeHeaderMap.Exists("BED2") Then
-                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value)
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "BED2")).Value)
             End If
             If typeHeaderMap.Exists("BED3") Then
-                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value)
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "BED3")).Value)
             End If
             If typeHeaderMap.Exists("BED4") Then
-                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value)
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "BED4")).Value)
             End If
             If typeHeaderMap.Exists("BED5") Then
-                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED5")).Value)
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "BED5")).Value)
             End If
             wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "AGBED")).Value = unitBedroomArea
         End If
@@ -266,6 +278,8 @@ Sub UnitTypes()
                 wsTypes.Cells(outputRow, pasCol).Interior.Color = RGB(255, 0, 0)
             End If
         End If
+
+
     
         outputRow = outputRow + 1
     Next key
@@ -283,6 +297,8 @@ Sub UnitTypes()
         .Header = xlNo
         .Apply
     End With
+
+    wsTypes.Cells(outputRow, 1).Value = totalUnits
     
 
     Set rng = wsTypes.Range(wsTypes.Cells(2, 1), wsTypes.Cells(outputRow - 1, typeLastCol))
@@ -292,7 +308,7 @@ Sub UnitTypes()
 
     wsTypes.rows(1).Clear
 
-    wsTemplate.Range(wsTemplate.Cells(20, 1), wsTemplate.Cells(27, typeLastCol)).Copy
+    wsTemplate.Range(wsTemplate.Cells(20, 1), wsTemplate.Cells(28, typeLastCol)).Copy
     wsTypes.Range("A1").Insert Shift:=xlDown
 
     lastRow = wsTypes.Cells(wsSource.rows.Count, 1).End(xlUp).row
