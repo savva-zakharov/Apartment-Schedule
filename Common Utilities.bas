@@ -578,9 +578,12 @@ End Sub
 ' ----------------------------------------------------------------------------
 
 ' Add SUM/COUNTA formulas to columns
-Sub sumColumnsSub(ws As Worksheet, columns As Collection, _
-                 startRow As Long, endRow As Long, _
-                 colOffset As Long, Optional countFirst As Boolean = False)
+Sub sumColumnsSub(ws As Worksheet, _
+                 columns As Collection, _
+                 startRow As Long, _
+                 endRow As Long, _
+                 colOffset As Long, _
+                 Optional countFirst As Boolean = False)
 
     Dim P As Long
     Dim colNum As Long
@@ -593,12 +596,12 @@ Sub sumColumnsSub(ws As Worksheet, columns As Collection, _
 
         If P = 1 And countFirst = True Then
             With ws.Cells(endRow, colNum + colOffset)
-                .Formula = "=COUNTA(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                .Formula = "=COUNTA(" & ColumnToLetter(colNum) & endRow - 1 & ":" & ColumnToLetter(colNum) & startRow & ")"
                 .Font.Bold = True
             End With
         Else
             With ws.Cells(endRow, colNum + colOffset)
-                .Formula = "=SUM(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                .Formula = "=SUM(" & ColumnToLetter(colNum) & endRow - 1 & ":" & ColumnToLetter(colNum) & startRow & ")"
                 .Font.Bold = True
             End With
         End If
@@ -618,7 +621,7 @@ Sub sumColumnsRowsSub(ws As Worksheet, columns As Collection, _
     If rows.Count > 0 Then
         For P = 1 To columns.Count
             colNum = columns(P)
-            colLetter = ColNumberToLetter(colNum)
+            colLetter = ColumnToLetter(colNum)
 
             ' Declare the formula and start writing it
             Dim blockFormulaString As String
@@ -647,7 +650,7 @@ Sub percentColumnsSub(ws As Worksheet, columns As Collection, _
 
     For P = 1 To columns.Count
         With ws.Cells(row + 1, columns(P))
-            .Formula = "=" & ColNumberToLetter(columns(P)) & row & "/A" & row
+            .Formula = "=" & ColumnToLetter(columns(P)) & row & "/A" & row
             .Font.Bold = False
             .NumberFormat = "0%"
         End With
@@ -665,7 +668,7 @@ Sub linkRow(wsSource As Worksheet, wsDestination As Worksheet, _
 
     For P = 1 To columns.Count
         colNum = columns(P) + colOffset
-        colLetter = ColNumberToLetter(colNum)
+        colLetter = ColumnToLetter(colNum)
 
         With wsDestination.Cells(rowDest, colNum)
             .Formula = "='" & wsSource.Name & "'!" & colLetter & rowSrc
@@ -678,75 +681,181 @@ End Sub
 ' Dwelling Lookup Function
 ' ----------------------------------------------------------------------------
 
+' Find lookup table range by header name in column A
+' Returns the range of the lookup table (10 rows below the header)
+' Also builds the header map from the header row found
+Function FindLookupTable(wsTemplate As Worksheet, lookupName As String, _
+                         ByRef headerMap As Object) As Range
+
+    Dim foundCell As Range
+    Dim searchRange As Range
+    Dim headerRow As Long
+
+    Set searchRange = wsTemplate.Columns("A")
+    Set foundCell = searchRange.Find(What:=lookupName, LookIn:=xlValues, LookAt:=xlWhole)
+
+    If foundCell Is Nothing Then
+        Set FindLookupTable = Nothing
+        Set headerMap = Nothing
+        Exit Function
+    End If
+
+    headerRow = foundCell.Row
+    Set headerMap = BuildHeaderMap(wsTemplate, headerRow)
+    Set FindLookupTable = wsTemplate.Rows(headerRow + 1).Resize(10)
+
+End Function
+
+' Lookup a specific value from dwelling lookup tables
+' Returns the value from the lookup table based on dwelling type, bed/person config, and key name
+Function GetLookupValue(wsTemplate As Worksheet, dwellingType As String, _
+                       bedCount As Long, personCount As Long, _
+                       lookupKey As String) As Variant
+
+    Dim lookupName As String
+    Dim lookupRange As Range
+    Dim lookupHeaderMap As Object
+    Dim foundRow As Range
+    Dim searchKey As String
+
+    ' Determine lookup table name based on dwelling type
+    Select Case True
+        Case InStr(1, UCase(dwellingType), "HOUSE") > 0
+            lookupName = "House Lookup"
+        Case InStr(1, UCase(dwellingType), "DUPLEX") > 0 Or InStr(1, UCase(dwellingType), "DUP") > 0
+            lookupName = "Duplex Lookup"
+        Case InStr(1, UCase(dwellingType), "APARTMENT") > 0 Or InStr(1, UCase(dwellingType), "APT") > 0
+            lookupName = "Apartment Lookup"
+        Case Else
+            GetLookupValue = ""
+            Exit Function
+    End Select
+
+    ' Find the lookup table dynamically
+    Set lookupRange = FindLookupTable(wsTemplate, lookupName, lookupHeaderMap)
+
+    If lookupRange Is Nothing Or lookupHeaderMap Is Nothing Then
+        GetLookupValue = ""
+        Exit Function
+    End If
+
+    ' Build search key (e.g., "1b 2p")
+    searchKey = bedCount & "b " & personCount & "p"
+
+    ' Find the row matching the bed/person configuration
+    On Error Resume Next
+    Set foundRow = lookupRange.Find(What:=searchKey, LookAt:=xlWhole, MatchCase:=False)
+    On Error GoTo 0
+
+    If foundRow Is Nothing Then
+        GetLookupValue = ""
+        Exit Function
+    End If
+
+    ' Return the value from the specified column
+    If lookupHeaderMap.Exists(UCase(lookupKey)) Then
+        GetLookupValue = wsTemplate.Cells(foundRow.Row, lookupHeaderMap(UCase(lookupKey))).Value
+    Else
+        GetLookupValue = ""
+    End If
+
+End Function
+
 ' Apply dwelling type lookup from template (colors and minimum standards)
+' Dynamically finds the lookup table by searching for header in column A
 Sub ApplyDwellingLookup(wsData As Worksheet, _
     wsTemplate As Worksheet, _
     rowNum As Long, _
-    lookupRange As String, _
+    dwellingType As String, _
     rngRow As Range, _
-    headerMap As Object, _
-    tempHeaderMap As Object)
+    headerMap As Object)
 
     Dim bedCount As Long
     Dim personCount As Long
     Dim lookupKey As String
     Dim foundRow As Range
-
+    Dim lookupRange As Range
+    Dim tempHeaderMap As Object
+    Dim lookupName As String
+    
+    ' Determine lookup table name based on dwelling type
+    Select Case True
+        Case InStr(1, UCase(dwellingType), "HOUSE") > 0
+            lookupName = "House Lookup"
+        Case InStr(1, UCase(dwellingType), "DUPLEX") > 0 Or InStr(1, UCase(dwellingType), "DUP") > 0
+            lookupName = "Duplex Lookup"
+        Case InStr(1, UCase(dwellingType), "APARTMENT") > 0 Or InStr(1, UCase(dwellingType), "APT") > 0
+            lookupName = "Apartment Lookup"
+        Case Else
+            rngRow.Interior.Color = RGB(255, 0, 0)
+            Exit Sub
+    End Select
+    
+    ' Find the lookup table dynamically
+    Set lookupRange = FindLookupTable(wsTemplate, lookupName, tempHeaderMap)
+    
+    If lookupRange Is Nothing Or tempHeaderMap Is Nothing Then
+        rngRow.Interior.Color = RGB(255, 0, 0)
+        Exit Sub
+    End If
+    
     bedCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "BEDS")).Value
     personCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "PERS")).Value
-
+    
     lookupKey = bedCount & "b " & personCount & "p"
-
+    
     On Error Resume Next
-    Set foundRow = wsTemplate.Range(lookupRange).Find( _
+    Set foundRow = lookupRange.Find( _
                         What:=lookupKey, _
                         LookAt:=xlWhole, _
                         MatchCase:=False)
     On Error GoTo 0
-
+    
     If foundRow Is Nothing Then
         rngRow.Interior.Color = RGB(255, 0, 0)
         Exit Sub
     End If
-
+    
     ' Apply template colour
-    rngRow.Interior.Color = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "COLOUR")).Interior.Color
-
+    If tempHeaderMap.Exists("COLOUR") Then
+        rngRow.Interior.Color = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "COLOUR")).Interior.Color
+    End If
+    
     ' Set minimums
-    If headerMap.Exists("MINAREA") Then
+    If headerMap.Exists("MINAREA") And tempHeaderMap.Exists("MINAREA") Then
         wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINAREA")).Value
     End If
-    If headerMap.Exists("MINPAS") Then
+    If headerMap.Exists("MINPAS") And tempHeaderMap.Exists("MINPAS") Then
         wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINPAS")).Value
     End If
-    If headerMap.Exists("MINCAS") Then
+    If headerMap.Exists("MINCAS") And tempHeaderMap.Exists("MINCAS") Then
         wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINCAS")).Value
     End If
-    If headerMap.Exists("MINAGBED") Then
+    If headerMap.Exists("MINAGBED") And tempHeaderMap.Exists("MINAGBED") Then
         wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINAGBED")).Value
     End If
-    If headerMap.Exists("MINLVNG") Then
+    If headerMap.Exists("MINLVNG") And tempHeaderMap.Exists("MINLVNG") Then
         wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINLVNG")).Value
     End If
-    If headerMap.Exists("MINSTOR") Then
+    If headerMap.Exists("MINSTOR") And tempHeaderMap.Exists("MINSTOR") Then
         wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINSTOR")).Value
     End If
-    If headerMap.Exists("MINBED1") Then
+    If headerMap.Exists("MINBED1") And tempHeaderMap.Exists("MINBED1") Then
         wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED1")).Value
     End If
-    If headerMap.Exists("MINBED2") Then
+    If headerMap.Exists("MINBED2") And tempHeaderMap.Exists("MINBED2") Then
         wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED2")).Value
     End If
-    If headerMap.Exists("MINBED3") Then
+    If headerMap.Exists("MINBED3") And tempHeaderMap.Exists("MINBED3") Then
         wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED3")).Value
     End If
-    If headerMap.Exists("MINBED4") Then
+    If headerMap.Exists("MINBED4") And tempHeaderMap.Exists("MINBED4") Then
         wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED4")).Value
     End If
-    If headerMap.Exists("MINBED5") Then
+    If headerMap.Exists("MINBED5") And tempHeaderMap.Exists("MINBED5") Then
         wsData.Cells(rowNum, headerMap("MINBED5")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED5")).Value
     End If
-    If headerMap.Exists("MINMAIN") Then
+    If headerMap.Exists("MINMAIN") And tempHeaderMap.Exists("MINMAIN") Then
         wsData.Cells(rowNum, headerMap("MINMAIN")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINMAIN")).Value
     End If
 

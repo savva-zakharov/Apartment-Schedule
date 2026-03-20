@@ -91,10 +91,6 @@ Sub UnitTypes()
     Dim typeHeaderMap As Object
     Set typeHeaderMap = BuildHeaderMap(wsTemplate, 29)
 
-        ' Build header map for wsTypes (header row = 61)
-    Dim tempHeaderMap As Object
-    Set tempHeaderMap = BuildHeaderMap(wsTemplate, 61)
-
     Dim typeLastCol As Long
     typeLastCol = GetLastColumnFromHeaderMap(typeHeaderMap)
 
@@ -212,23 +208,26 @@ Sub UnitTypes()
         End If
 
         Set rng = wsTypes.Range(wsTypes.Cells(outputRow, 3), wsTypes.Cells(outputRow, typeLastCol))
-    
+        
+        Dim dwellingType As String
+        dwellingType = wsTypes.Cells(outputRow, descCol).Value
+
         Select Case True
-    
+
             ' HOUSES
-            Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "HOUSE") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A81:A89", rng, typeHeaderMap, tempHeaderMap)
-    
+            Case InStr(1, UCase(dwellingType), "HOUSE") > 0
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, dwellingType, rng, typeHeaderMap)
+
             ' DUPLEX
-            Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "DUPLEX") > 0 _
-              Or InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "DUP") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A71:A76", rng, typeHeaderMap, tempHeaderMap)
-    
+            Case InStr(1, UCase(dwellingType), "DUPLEX") > 0 _
+              Or InStr(1, UCase(dwellingType), "DUP") > 0
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, dwellingType, rng, typeHeaderMap)
+
             ' APARTMENTS
-            Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "APARTMENT") > 0 _
-              Or InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "APT") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A62:A67", rng, typeHeaderMap, tempHeaderMap)
-    
+            Case InStr(1, UCase(dwellingType), "APARTMENT") > 0 _
+              Or InStr(1, UCase(dwellingType), "APT") > 0
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, dwellingType, rng, typeHeaderMap)
+
         End Select
 
         If typeHeaderMap.Exists("AGBED") Then

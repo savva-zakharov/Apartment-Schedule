@@ -11,7 +11,6 @@ Sub GenerateUnitStats()
     Dim wsStats As Worksheet
     Dim wsTemplate As Worksheet
     Dim sourceHeaderMap As Object
-    Dim tempHeaderMap As Object
     Dim typeDict As Object
     Dim lastRow As Long
     Dim i As Long
@@ -38,8 +37,7 @@ Sub GenerateUnitStats()
     
     ' Build header maps
     Set sourceHeaderMap = BuildHeaderMap(wsSource, 1)
-    Set tempHeaderMap = BuildHeaderMap(wsTemplate, 61)
-    
+
     ' Create stats worksheet
     currentDate = Format(Date, "yy-mm-dd")
     Set wsStats = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
@@ -48,9 +46,9 @@ Sub GenerateUnitStats()
     ' Find unique unit types from wsSource
     Set typeDict = CreateObject("Scripting.Dictionary")
     Call FindUniqueUnitTypes(wsSource, sourceHeaderMap, wsTemplate, typeDict)
-    
+
     ' Generate stats tables
-    Call BuildStatsTables(wsSource, wsStats, wsTemplate, sourceHeaderMap, tempHeaderMap, typeDict)
+    Call BuildStatsTables(wsSource, wsStats, wsTemplate, sourceHeaderMap, typeDict)
     
     ' Restore settings
     Application.ScreenUpdating = True
@@ -112,8 +110,8 @@ End Sub
 ' ============================================================================
 Sub BuildStatsTables(wsSource As Worksheet, wsStats As Worksheet, _
                     wsTemplate As Worksheet, sourceHeaderMap As Object, _
-                    tempHeaderMap As Object, typeDict As Object)
-    
+                    typeDict As Object)
+
     Dim iStats As Long
     Dim unitStartRow As Long
     Dim unitTitle As String
@@ -126,26 +124,34 @@ Sub BuildStatsTables(wsSource As Worksheet, wsStats As Worksheet, _
     Dim typeItems As Variant
     Dim sourceRow As Long
     Dim totalUnits As Long
-    
+    Dim dwellingType As String
+    Dim bedCount As Long
+    Dim personCount As Long
+
     iStats = 2
-    
+
     ' Calculate total units
     For Each key In typeDict.Keys
         totalUnits = totalUnits + typeDict(key)(0)
     Next key
-    
+
     ' Loop through each unique unit type
     For Each key In typeDict.Keys
         unitStartRow = iStats
         typeItems = typeDict(key)
         sourceRow = typeItems(1)
-        
+
         ' Get unit type from source
         unitType = key
-        
-        ' Determine unit title based on dwelling type from source
+
+        ' Determine unit title and dwelling type from source
+        dwellingType = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BEDTYPE")
         unitTitle = GetUnitTitle(wsSource, sourceRow, sourceHeaderMap)
-        
+
+        ' Get beds and persons for lookup
+        bedCount = Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BEDS"))
+        personCount = Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "PERS"))
+
         ' Title row
         With wsStats.Range(wsStats.Cells(iStats, 1), wsStats.Cells(iStats, 3))
             .Merge
@@ -156,84 +162,77 @@ Sub BuildStatsTables(wsSource As Worksheet, wsStats As Worksheet, _
             .Font.Bold = True
         End With
         iStats = iStats + 1
-        
-        ' Get beds and persons from source
-        unitBeds = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BEDS")
-        unitPers = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "PERS")
-        
+
+        unitBeds = bedCount
+        unitPers = personCount
+
         ' Sub-header row
         wsStats.Cells(iStats, 1).Value = unitBeds & "Bed / " & unitPers & "P " & unitTitle
         wsStats.Cells(iStats, 2).Value = "Target"
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = "Proposed"
         iStats = iStats + 1
-        
+
         ' Gross Floor Area
         wsStats.Cells(iStats, 1).Value = "Gross Floor Area - sqm"
-        wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINAREA")
+        wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINAREA")
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "GIFA")
         iStats = iStats + 1
-        
+
         ' Private Amenity Area
         wsStats.Cells(iStats, 1).Value = "Private Amenity Area - sqm"
-        wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINPAS")
+        wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINPAS")
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "PAS")
         iStats = iStats + 1
-        
+
         ' Main Living Area
         wsStats.Cells(iStats, 1).Value = "Main Living Room - sqm"
-        If Val(unitPers) > 5 Then
-            wsStats.Cells(iStats, 2).Value = 15
-        ElseIf Val(unitPers) > 2 Then
-            wsStats.Cells(iStats, 2).Value = 13
-        Else
-            wsStats.Cells(iStats, 2).Value = 11
-        End If
+        wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINMAIN")
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         iStats = iStats + 1
-        
+
         ' Aggregate Living Area
         wsStats.Cells(iStats, 1).Value = "Aggregate Living Area - sqm"
-        wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINLVNG")
+        wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINLVNG")
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "LVNG")
         iStats = iStats + 1
-        
+
         ' Aggregate Bedroom Area
         wsStats.Cells(iStats, 1).Value = "Aggregate Bedroom Area - sqm"
         unitBedroomArea = Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED1")) + _
                         Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED2")) + _
                         Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED3")) + _
                         Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED4"))
-        
-        wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINAGBED")
+
+        wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINAGBED")
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = unitBedroomArea
         iStats = iStats + 1
-        
+
         ' Individual Bedroom Areas
         If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED1")) > 0 Then
             wsStats.Cells(iStats, 1).Value = "Main Bedroom - sqm"
-            wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINBED1")
+            wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINBED1")
             wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
             wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED1")
             iStats = iStats + 1
         End If
-        
+
         If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED2")) > 0 Then
             If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED2")) >= 11.4 Then
                 wsStats.Cells(iStats, 1).Value = "Double Bedroom Area - sqm"
             Else
                 wsStats.Cells(iStats, 1).Value = "Single Bedroom Area - sqm"
             End If
-            
-            wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINBED2")
+
+            wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINBED2")
             wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
             wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED2")
             iStats = iStats + 1
-            
+
             If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED2")) >= 11.4 Then
                 wsStats.Cells(iStats, 1).Value = "Double Bedroom Width - m"
                 wsStats.Cells(iStats, 2).Value = "2.8"
@@ -245,18 +244,18 @@ Sub BuildStatsTables(wsSource As Worksheet, wsStats As Worksheet, _
             End If
             iStats = iStats + 1
         End If
-        
+
         If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED3")) > 0 Then
             If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED3")) >= 11.4 Then
                 wsStats.Cells(iStats, 1).Value = "Double Bedroom Area - sqm"
             Else
                 wsStats.Cells(iStats, 1).Value = "Single Bedroom Area - sqm"
             End If
-            wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINBED3")
+            wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINBED3")
             wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
             wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED3")
             iStats = iStats + 1
-            
+
             If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED3")) >= 11.4 Then
                 wsStats.Cells(iStats, 1).Value = "Double Bedroom Width - m"
                 wsStats.Cells(iStats, 2).Value = "2.8"
@@ -268,18 +267,18 @@ Sub BuildStatsTables(wsSource As Worksheet, wsStats As Worksheet, _
             End If
             iStats = iStats + 1
         End If
-        
+
         If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED4")) > 0 Then
             If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED4")) >= 11.4 Then
                 wsStats.Cells(iStats, 1).Value = "Double Bedroom Area - sqm"
             Else
                 wsStats.Cells(iStats, 1).Value = "Single Bedroom Area - sqm"
             End If
-            wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINBED4")
+            wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINBED4")
             wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
             wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED4")
             iStats = iStats + 1
-            
+
             If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "BED4")) >= 11.4 Then
                 wsStats.Cells(iStats, 1).Value = "Double Bedroom Width - m"
                 wsStats.Cells(iStats, 2).Value = "2.8"
@@ -291,22 +290,22 @@ Sub BuildStatsTables(wsSource As Worksheet, wsStats As Worksheet, _
             End If
             iStats = iStats + 1
         End If
-        
+
         If Val(GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "STOR")) > 0 Then
             wsStats.Cells(iStats, 1).Value = "Min. Storage Space"
-            wsStats.Cells(iStats, 2).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "MINSTOR")
+            wsStats.Cells(iStats, 2).Value = GetLookupValue(wsTemplate, dwellingType, bedCount, personCount, "MINSTOR")
             wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
             wsStats.Cells(iStats, 3).Value = GetSourceValue(wsSource, sourceRow, sourceHeaderMap, "STOR")
             iStats = iStats + 1
         End If
-        
+
         ' Draw table with header
         Set rng = wsStats.Range(wsStats.Cells(unitStartRow, 1), wsStats.Cells(iStats - 1, 3))
         Call DrawTableWithHeader(rng)
-        
+
         iStats = iStats + 2
     Next key
-    
+
     ' Auto-fit columns
     With wsStats
         .Columns(1).AutoFit
@@ -315,7 +314,7 @@ Sub BuildStatsTables(wsSource As Worksheet, wsStats As Worksheet, _
         .Columns(2).HorizontalAlignment = xlCenter
         .Columns(3).HorizontalAlignment = xlCenter
     End With
-    
+
 End Sub
 
 ' ============================================================================
