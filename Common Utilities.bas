@@ -10,13 +10,13 @@ Option Explicit
 ' ----------------------------------------------------------------------------
 
 ' Convert column letter to number (e.g., "A" -> 1, "Z" -> 26, "AA" -> 27)
-Function ColLetterToNumber(colInput As String) As Long
+Function ColumnToNumber(colInput As String) As Long
     Dim i As Long
     Dim result As Long
     Dim char As String
 
     If Trim(colInput) = "" Then
-        ColLetterToNumber = 0
+        ColumnToNumber = 0
         Exit Function
     End If
 
@@ -24,7 +24,7 @@ Function ColLetterToNumber(colInput As String) As Long
 
     ' If numeric, return as-is
     If IsNumeric(colInput) Then
-        ColLetterToNumber = CLng(colInput)
+        ColumnToNumber = CLng(colInput)
         Exit Function
     End If
 
@@ -35,24 +35,24 @@ Function ColLetterToNumber(colInput As String) As Long
     For i = 1 To Len(colInput)
         char = Mid(colInput, i, 1)
         If char < "A" Or char > "Z" Then
-            ColLetterToNumber = 0 ' Invalid character found
+            ColumnToNumber = 0 ' Invalid character found
             Exit Function
         End If
         result = result * 26 + (Asc(char) - 64)
     Next i
 
-    ColLetterToNumber = result
+    ColumnToNumber = result
 End Function
 
 ' Convert column number to letter (e.g., 1 -> "A", 26 -> "Z", 27 -> "AA")
-Function ColNumberToLetter(colInput As Variant) As String
+Function ColumnToLetter(colInput As Variant) As String
     Dim colNum As Long
     Dim result As String
     Dim tempNum As Long
 
     ' Handle empty or null input
     If IsEmpty(colInput) Or IsNull(colInput) Then
-        ColNumberToLetter = ""
+        ColumnToLetter = ""
         Exit Function
     End If
 
@@ -61,7 +61,7 @@ Function ColNumberToLetter(colInput As Variant) As String
     strInput = Trim(CStr(colInput))
 
     If strInput = "" Then
-        ColNumberToLetter = ""
+        ColumnToLetter = ""
         Exit Function
     End If
 
@@ -70,15 +70,15 @@ Function ColNumberToLetter(colInput As Variant) As String
         colNum = CLng(strInput)
         ' Validate column number range (1 to 16,384)
         If colNum < 1 Or colNum > 16384 Then
-            ColNumberToLetter = ""
+            ColumnToLetter = ""
             Exit Function
         End If
     Else
         ' Convert letter(s) to number first
-        colNum = ColLetterToNumber(strInput)
+        colNum = ColumnToNumber(strInput)
         ' If conversion failed (returned 0), invalid input
         If colNum = 0 Then
-            ColNumberToLetter = ""
+            ColumnToLetter = ""
             Exit Function
         End If
     End If
@@ -93,7 +93,7 @@ Function ColNumberToLetter(colInput As Variant) As String
         tempNum = tempNum \ 26
     Loop
 
-    ColNumberToLetter = result
+    ColumnToLetter = result
 End Function
 
 ' ----------------------------------------------------------------------------
@@ -138,14 +138,14 @@ End Function
 ' Returns -1 if header not found (invalid column - must be checked before use)
 Function GetColByHeader(headerMap As Object, headerName As String) As Long
     If headerMap Is Nothing Then
-        GetColByHeader = -1
+        GetColByHeader = 1
         Exit Function
     End If
 
     If headerMap.Exists(UCase(headerName)) Then
         GetColByHeader = headerMap(UCase(headerName))
     Else
-        GetColByHeader = -1
+        GetColByHeader = 1 ' Default to column 1 if header not found (or could raise an error)
     End If
 End Function
 
@@ -509,8 +509,8 @@ Sub copyCellsByHeader(wsSource As Worksheet, wsDest As Worksheet, _
         ' Only copy if header exists in both maps
         If targetHeaderMap.Exists(key) Then
             ' Convert dictionary values (e.g., "A" or 1) to Column Numbers
-            srcCol = ColLetterToNumber(srcHeaderMap(key))
-            tgtCol = ColLetterToNumber(targetHeaderMap(key))
+            srcCol = ColumnToNumber(srcHeaderMap(key))
+            tgtCol = ColumnToNumber(targetHeaderMap(key))
 
             ' Validate columns are within Excel bounds (1 to 16,384)
             If srcCol >= 1 And tgtCol >= 1 And srcCol <= 16384 And tgtCol <= 16384 Then

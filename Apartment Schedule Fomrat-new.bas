@@ -1,112 +1,5 @@
 Option Explicit
 
-Function ColLetterToNumber(colLetter As String) As Long
-    ColLetterToNumber = Range(colLetter & "1").Column
-End Function
-
-' Helper function to convert column number to letter
-Function ColNumberToLetter(colInput As Variant) As String
-    Dim colNum As Long
-    Dim result As String
-    Dim tempNum As Long
-    
-    ' --- 1. HANDLE EMPTY OR NULL INPUT ---
-    If IsEmpty(colInput) Or IsNull(colInput) Then
-        ColNumberToLetter = ""
-        Exit Function
-    End If
-    
-    ' --- 2. CONVERT TO STRING FOR VALIDATION ---
-    Dim strInput As String
-    strInput = Trim(CStr(colInput))
-    
-    If strInput = "" Then
-        ColNumberToLetter = ""
-        Exit Function
-    End If
-    
-    ' --- 3. DETERMINE IF INPUT IS NUMERIC OR ALPHABETIC ---
-    If IsNumeric(strInput) Then
-        colNum = CLng(strInput)
-        
-        ' Validate column number range (1 to 16,384)
-        If colNum < 1 Or colNum > 16384 Then
-            ColNumberToLetter = ""
-            Exit Function
-        End If
-    Else
-        ' Convert letter(s) to number first
-        colNum = ColLetterToNumber(strInput)
-        
-        ' If conversion failed (returned 0), invalid input
-        If colNum = 0 Then
-            ColNumberToLetter = ""
-            Exit Function
-        End If
-    End If
-    
-    ' --- 4. CONVERT COLUMN NUMBER TO LETTER (Math-Based) ---
-    result = ""
-    tempNum = colNum
-    
-    Do While tempNum > 0
-        tempNum = tempNum - 1
-        result = Chr(65 + (tempNum Mod 26)) & result
-        tempNum = tempNum \ 26
-    Loop
-    
-    ColNumberToLetter = result
-End Function
-
-' Helper function to get column number from header name using the header map
-Function GetColByHeader(headerMap As Object, headerName As String) As Long
-    If headerMap.Exists(UCase(headerName)) Then
-        GetColByHeader = headerMap(UCase(headerName))
-    Else
-        GetColByHeader = 0
-    End If
-End Function
-
-' Build a dictionary mapping uppercase header names to column numbers
-Function BuildHeaderMap(ws As Worksheet, headerRow As Long) As Object
-    Dim headerMap As Object
-    Set headerMap = CreateObject("Scripting.Dictionary")
-    
-    Dim col As Long
-    Dim headerName As String
-    
-    For col = 1 To 26
-        If ws.Cells(headerRow, col).Value <> "" Then
-            headerName = UCase(Trim(ws.Cells(headerRow, col).Value))
-            headerMap.Add headerName, col
-        End If
-    Next col
-    
-    Set BuildHeaderMap = headerMap
-End Function
-
-Function mapMaxValue(dict As Object) As Variant
-    
-    Dim key As Variant
-    Dim maxValue As Variant
-    Dim firstKey As Variant
-    
-    If dict Is Nothing Then Exit Function
-    If dict.Count = 0 Then Exit Function
-    
-    firstKey = dict.Keys()(0)
-    maxValue = dict(firstKey)
-    
-    For Each key In dict.Keys
-        If dict(key) > maxValue Then
-            maxValue = dict(key)
-        End If
-    Next key
-    
-    mapMaxValue = maxValue
-
-End Function
-
 Sub ProduceHQA()
 
     Dim wsSource As Worksheet
@@ -1233,12 +1126,12 @@ Sub sumColumnsSub(ws As Worksheet, columns As Collection, startRow As Long, endR
             
             If P = 1 And countFirst = True Then
                 With ws.Cells(endRow, colNum + colOffset)
-                        .Formula = "=COUNTA(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                        .Formula = "=COUNTA(" & ColumnToLetter(colNum) & endRow - 1 & ":" & ColumnToLetter(colNum) & startRow & ")"
                         .Font.Bold = True
                 End With
             Else
                 With ws.Cells(endRow, colNum + colOffset)
-                        .Formula = "=SUM(" & ColNumberToLetter(colNum) & endRow - 1 & ":" & ColNumberToLetter(colNum) & startRow & ")"
+                        .Formula = "=SUM(" & ColumnToLetter(colNum) & endRow - 1 & ":" & ColumnToLetter(colNum) & startRow & ")"
                         .Font.Bold = True
                 End With
             End If
@@ -1256,7 +1149,7 @@ Sub sumColumnsRowsSub(ws As Worksheet, columns As Collection, rows As Collection
         
             For P = 1 To columns.Count
                 colNum = columns(P)
-                colLetter = ColNumberToLetter(colNum)
+                colLetter = ColumnToLetter(colNum)
     
                 'Declare the formula and start writing it
                 Dim blockFormulaString As String
@@ -1354,7 +1247,7 @@ Sub linkRow(wsSource As Worksheet, wsDestination As Worksheet, columns As Collec
     Dim colLetter As String
     For P = 1 To columns.Count
         colNum = columns(P) + colOffset
-        colLetter = ColNumberToLetter(colNum)
+        colLetter = ColumnToLetter(colNum)
         With wsDestination.Cells(rowDest, colNum)
             .Formula = "='" & wsSource.Name & "'!" & colLetter & rowSrc
             .Font.Bold = False
