@@ -34,12 +34,13 @@ Sub UnitTypes()
 
     filePath = Trim(wsTemplate.Range("AA5").Value)
     
+    
     ' Remove surrounding double quotes if present (tolerant of quoted paths)
     If Left(filePath, 1) = """" And Right(filePath, 1) = """" Then
         filePath = Mid(filePath, 2, Len(filePath) - 2)
     End If
 
-    If Dir(filePath) = "" Then
+    If Dir(filePath) = "" Or Dir(filePath) = "NA" Then
         MsgBox "File not found:" & vbCrLf & filePath, vbExclamation
         Exit Sub
     Else:
@@ -88,6 +89,10 @@ Sub UnitTypes()
     ' Build header map for wsTypes (header row = 28)
     Dim typeHeaderMap As Object
     Set typeHeaderMap = BuildHeaderMap(wsTemplate, 28)
+
+        ' Build header map for wsTypes (header row = 28)
+    Dim tempHeaderMap As Object
+    Set tempHeaderMap = BuildHeaderMap(wsTemplate, 60)
 
     Dim typeLastCol As Long
     typeLastCol = GetLastColumnFromHeaderMap(typeHeaderMap)
@@ -194,31 +199,43 @@ Sub UnitTypes()
         ' overwrite column E with combined unit type
         wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "Type")).Value = typeKeys(key)
 
-        Set rng = wsTypes.Range(wsTypes.Cells(outputRow, 2), wsTypes.Cells(outputRow, typeLastCol))
+        Set rng = wsTypes.Range(wsTypes.Cells(outputRow, 3), wsTypes.Cells(outputRow, typeLastCol))
     
         Select Case True
     
             ' HOUSES
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "HOUSE") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "AA27:AA34", rng, typeHeaderMap)
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A80:A88", rng, typeHeaderMap, tempHeaderMap)
     
             ' DUPLEX
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "DUPLEX") > 0 _
               Or InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "DUP") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "AA17:AA22", rng, typeHeaderMap)
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A69:A75", rng, typeHeaderMap, tempHeaderMap)
     
             ' APARTMENTS
             Case InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "APARTMENT") > 0 _
               Or InStr(1, UCase(wsTypes.Cells(outputRow, descCol).Value), "APT") > 0
-                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "AA8:AA13", rng, typeHeaderMap)
+                Call ApplyDwellingLookup(wsTypes, wsTemplate, outputRow, "A61:A66", rng, typeHeaderMap, tempHeaderMap)
     
         End Select
 
         If typeHeaderMap.Exists("AGBED") Then
-            unitBedroomArea = Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value) + _
-                      Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value) + _
-                      Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) + _
-                      Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value)
+            unitBedroomArea = 0
+            If typeHeaderMap.Exists("BED1") Then
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value)
+            End If
+            If typeHeaderMap.Exists("BED2") Then
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value)
+            End If
+            If typeHeaderMap.Exists("BED3") Then
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value)
+            End If
+            If typeHeaderMap.Exists("BED4") Then
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value)
+            End If
+            If typeHeaderMap.Exists("BED5") Then
+                unitBedroomArea = unitBedroomArea + Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED5")).Value)
+            End If
             wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "AGBED")).Value = unitBedroomArea
         End If
 
@@ -226,24 +243,28 @@ Sub UnitTypes()
         ' COMPLIANCE CHECK – cell-level only
         
         ' GFA CHECK - check that the floor area matches the minimum area requirement for the unit type
-        If Val(wsTypes.Cells(outputRow, minAreaCol).Value) > Val(wsTypes.Cells(outputRow, areaCol).Value) _
-           And Val(wsTypes.Cells(outputRow, typeHeaderMap("GIFA")).Value) > 0 Then
-            wsTypes.Cells(outputRow, minAreaCol).Interior.Color = RGB(255, 0, 0)
+        If typeHeaderMap.Exists("minAREA") And typeHeaderMap.Exists("GIFA") Then
+            If Val(wsTypes.Cells(outputRow, minAreaCol).Value) > Val(wsTypes.Cells(outputRow, areaCol).Value) _
+            And Val(wsTypes.Cells(outputRow, typeHeaderMap("GIFA")).Value) > 0 Then
+                wsTypes.Cells(outputRow, minAreaCol).Interior.Color = RGB(255, 0, 0)
+            End If
         End If
 
         '10%
-        If Val(wsTypes.Cells(outputRow, areaCol).Value) > Val(wsTypes.Cells(outputRow, minAreaCol).Value) * 1.1 Then
-            wsTypes.Cells(outputRow, min10Col).Value = 1
-        Else
-            wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "min10")).Value = 0
-        End If
-
-            
+        If typeHeaderMap.Exists("min10") Then
+            If Val(wsTypes.Cells(outputRow, areaCol).Value) > Val(wsTypes.Cells(outputRow, minAreaCol).Value) * 1.1 Then
+                wsTypes.Cells(outputRow, min10Col).Value = 1
+            Else
+                wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "min10")).Value = 0
+            End If
+        End If            
 
         ' PRIVATE AMENITY AREA CHECK - check that the amenity area meets the minimum requirement for the unit type
-        If Val(wsTypes.Cells(outputRow, pasCol).Value) < Val(wsTypes.Cells(outputRow, minPasCol).Value) _
-           And Val(wsTypes.Cells(outputRow, minPasCol).Value) > 0 Then
-            wsTypes.Cells(outputRow, pasCol).Interior.Color = RGB(255, 0, 0)
+        If typeHeaderMap.Exists("minPAS") And typeHeaderMap.Exists("PAS") Then
+            If Val(wsTypes.Cells(outputRow, pasCol).Value) < Val(wsTypes.Cells(outputRow, minPasCol).Value) _
+            And Val(wsTypes.Cells(outputRow, minPasCol).Value) > 0 Then
+                wsTypes.Cells(outputRow, pasCol).Interior.Color = RGB(255, 0, 0)
+            End If
         End If
     
         outputRow = outputRow + 1
@@ -262,21 +283,32 @@ Sub UnitTypes()
         .Header = xlNo
         .Apply
     End With
+    
 
     Set rng = wsTypes.Range(wsTypes.Cells(2, 1), wsTypes.Cells(outputRow - 1, typeLastCol))
     Call drawBorderThickOutline(rng)
 
     Call FormatColumnsByPattern(wsTypes, typeHeaderMap, "MIN", True, True, RGB(128, 128, 128))
 
-
-
+    wsTypes.rows(1).Clear
 
     wsTemplate.Range(wsTemplate.Cells(20, 1), wsTemplate.Cells(27, typeLastCol)).Copy
     wsTypes.Range("A1").Insert Shift:=xlDown
 
-
-
     lastRow = wsTypes.Cells(wsSource.rows.Count, 1).End(xlUp).row
+
+    Dim lastColLetter As String
+    lastColLetter = ColumnToLetter(typeLastCol)
+
+    wsTypes.PageSetup.PrintArea = "A1:" & lastColLetter & lastRow
+    wsTypes.Activate
+    ActiveWindow.View = xlPageBreakPreview
+    With wsTypes.PageSetup
+        .Zoom = False
+        .FitToPagesWide = 1
+        .FitToPagesTall = False ' Can be 1 or left as False to auto-scale height
+    End With
+    
 
     '#######################################
     '# Creating Unit Stat Blocks Worksheet #
@@ -348,6 +380,21 @@ For i = 10 To lastRow
     wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "PAS")).Value
     iStats = iStats + 1
 
+    ' Main Living Area
+    wsStats.Cells(iStats, 1).Value = "Main Living Room - sqm"
+    If wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "PERS")).Value > 5 Then
+        wsStats.Cells(iStats, 2).Value = 15
+    ElseIf wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "PERS")).Value > 2 Then
+        wsStats.Cells(iStats, 2).Value = 13
+    Else
+        wsStats.Cells(iStats, 2).Value = 11
+    End If
+
+
+
+    wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+    iStats = iStats + 1
+
     ' Aggregate Living Area
     wsStats.Cells(iStats, 1).Value = "Aggregate Living Area - sqm"
     wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINLVNG")).Value
@@ -371,42 +418,73 @@ For i = 10 To lastRow
     If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value) > 0 Then
         wsStats.Cells(iStats, 1).Value = "Main Bedroom - sqm"
         wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED1")).Value
-    wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED1")).Value
         iStats = iStats + 1
+    
     End If
     If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value) > 0 Then
         If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value) >= 11.4 Then
-            wsStats.Cells(iStats, 1).Value = "Double Bedroom area - sqm"
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom Area - sqm"
         Else
-            wsStats.Cells(iStats, 1).Value = "Single Bedroom area - sqm"
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom Area - sqm"
         End If
 
         wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED2")).Value
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value
         iStats = iStats + 1
+        If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED2")).Value) >= 11.4 Then
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom Width - m"
+            wsStats.Cells(iStats, 2).Value = "2.8"
+            wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        Else
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom Width - m"
+            wsStats.Cells(iStats, 2).Value = "2.1"
+            wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        End If
+        iStats = iStats + 1
     End If
     If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) > 0 Then
         If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) >= 11.4 Then
-            wsStats.Cells(iStats, 1).Value = "Double Bedroom area - sqm"
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom Area - sqm"
         Else
-            wsStats.Cells(iStats, 1).Value = "Single Bedroom area - sqm"
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom Area - sqm"
         End If
         wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED3")).Value
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value
         iStats = iStats + 1
+        If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED3")).Value) >= 11.4 Then
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom Width - m"
+            wsStats.Cells(iStats, 2).Value = "2.8"
+            wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        Else
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom Width - m"
+            wsStats.Cells(iStats, 2).Value = "2.1"
+            wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        End If
+        iStats = iStats + 1
     End If
     If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value) > 0 Then
         If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value) >= 11.4 Then
-            wsStats.Cells(iStats, 1).Value = "Double Bedroom area - sqm"
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom Area - sqm"
         Else
-            wsStats.Cells(iStats, 1).Value = "Single Bedroom area - sqm"
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom Area - sqm"
         End If
         wsStats.Cells(iStats, 2).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "MINBED4")).Value
         wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
         wsStats.Cells(iStats, 3).Value = wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value
+        iStats = iStats + 1
+        If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "BED4")).Value) >= 11.4 Then
+            wsStats.Cells(iStats, 1).Value = "Double Bedroom Width - m"
+            wsStats.Cells(iStats, 2).Value = "2.8"
+            wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        Else
+            wsStats.Cells(iStats, 1).Value = "Single Bedroom Width - m"
+            wsStats.Cells(iStats, 2).Value = "2.1"
+            wsStats.Cells(iStats, 2).Font.Color = RGB(83, 141, 213)
+        End If
         iStats = iStats + 1
     End If
     If Val(wsTypes.Cells(i, GetColByHeader(typeHeaderMap, "STOR")).Value) > 0 Then
@@ -593,7 +671,7 @@ Function BuildHeaderMap(ws As Worksheet, headerRow As Long) As Object
     Dim col As Long
     Dim headerName As String
     
-    For col = 1 To 26
+    For col = 1 To 100
         If ws.Cells(headerRow, col).Value <> "" Then
             headerName = UCase(Trim(ws.Cells(headerRow, col).Value))
             headerMap.Add headerName, col
@@ -707,14 +785,13 @@ Sub FormatColumnsByPattern(ws As Worksheet, headerMap As Object, _
     Debug.Print "Format complete: " & formatCount & " columns formatted for pattern '" & searchPattern & "'"
 End Sub
 
-Sub ApplyDwellingLookup( _
-    wsData As Worksheet, _
+Sub ApplyDwellingLookup(wsData As Worksheet, _
     wsTemplate As Worksheet, _
     rowNum As Long, _
     lookupRange As String, _
     rngRow As Range, _
-    headerMap As Object _
-)
+    headerMap As Object, _
+    tempHeaderMap As Object)
 
     Dim bedCount As Long
     Dim personCount As Long
@@ -722,8 +799,8 @@ Sub ApplyDwellingLookup( _
     Dim foundRow As Range
     Dim tallyCol As Long
 
-    bedCount = wsData.Cells(rowNum, headerMap("BEDS")).Value
-    personCount = wsData.Cells(rowNum, headerMap("PERS")).Value
+    bedCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "BEDS")).Value
+    personCount = wsData.Cells(rowNum, GetColByHeader(headerMap, "PERS")).Value
 
     lookupKey = bedCount & "b " & personCount & "p"
 
@@ -738,41 +815,44 @@ Sub ApplyDwellingLookup( _
     End If
 
     ' Apply template colour
-    rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, "AB").Interior.Color
+    rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "COLOUR")).Interior.Color
 
     ' Set minimums
     If headerMap.Exists("MINAREA") Then
-        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.row, "AC").Value ' Min Area
+        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINAREA")).Value ' Min Area
     End If
     If headerMap.Exists("MINPAS") Then
-        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.row, "AD").Value ' Min PAS
+        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINPAS")).Value ' Min PAS
     End If
     If headerMap.Exists("MINCAS") Then
-        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, "AE").Value ' Min CAS
-    End If
-    If headerMap.Exists("MINCAS") Then
-        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, "AE").Value ' Min CAS
+        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINCAS")).Value ' Min CAS
     End If
     If headerMap.Exists("MINAGBED") Then
-        wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.row, "AG").Value ' Min Agregate Bedroom Area
+        wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINAGBED")).Value ' Min Agregate Bedroom Area
     End If
     If headerMap.Exists("MINLVNG") Then
-        wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.row, "AF").Value ' Min Living Area
+        wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINLVNG")).Value ' Min Living Area
     End If
     If headerMap.Exists("MINSTOR") Then
-        wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.row, "AL").Value ' Min Storage Area
+        wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINSTOR")).Value ' Min Storage Area
     End If
     If headerMap.Exists("MINBED1") Then
-        wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.row, "AH").Value ' Min Bedroom 1 Area
+        wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED1")).Value ' Min Bedroom 1 Area
     End If
     If headerMap.Exists("MINBED2") Then
-        wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.row, "AI").Value ' Min Bedroom 2 Area
+        wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED2")).Value ' Min Bedroom 2 Area
     End If
     If headerMap.Exists("MINBED3") Then
-        wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.row, "AJ").Value ' Min Bedroom 3 Area
+        wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED3")).Value ' Min Bedroom 3 Area
     End If
     If headerMap.Exists("MINBED4") Then
-        wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.row, "AK").Value ' Min Bedroom 4 Area
+        wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED4")).Value ' Min Bedroom 4 Area
+    End If
+    If headerMap.Exists("MINBED5") Then
+        wsData.Cells(rowNum, headerMap("MINBED5")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED5")).Value ' Min Bedroom 5 Area
+    End If
+    If headerMap.Exists("MINMAIN") Then
+        wsData.Cells(rowNum, headerMap("MINMAIN")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINMAIN")).Value ' Min Main Area
     End If
 
 End Sub
@@ -883,4 +963,46 @@ Sub DrawTableWithHeader(rng As Range)
     End With
 
 End Sub
+
+Function GetColByHeader(headerMap As Object, headerName As String) As Long
+    If headerMap.Exists(UCase(headerName)) Then
+        GetColByHeader = headerMap(UCase(headerName))
+    Else
+        GetColByHeader = 0
+    End If
+End Function
+
+Function ColLetterToNumber(colInput As String) As Long
+    Dim i As Long
+    Dim result As Long
+    Dim char As String
+    
+    If Trim(colInput) = "" Then
+        ColLetterToNumber = 0
+        Exit Function
+    End If
+    
+    colInput = Trim(colInput)
+    
+    ' If numeric, return as-is
+    If IsNumeric(colInput) Then
+        ColLetterToNumber = CLng(colInput)
+        Exit Function
+    End If
+    
+    ' If alphabetic, convert
+    colInput = UCase(colInput)
+    result = 0
+    
+    For i = 1 To Len(colInput)
+        char = Mid(colInput, i, 1)
+        If char < "A" Or char > "Z" Then
+            ColLetterToNumber = 0 ' Invalid character found
+            Exit Function
+        End If
+        result = result * 26 + (Asc(char) - 64)
+    Next i
+    
+    ColLetterToNumber = result
+End Function
 
