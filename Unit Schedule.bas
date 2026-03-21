@@ -147,7 +147,7 @@ Sub SortSchedule(ws As Worksheet, headerMap As Object, lastCol As Long)
     Dim lastRow As Long
     Dim zoneCol As Long, blokCol As Long, levelCol As Long, noCol As Long
 
-    lastRow = ws.Cells(ws.rows.Count, lastCol).End(xlUp).row
+    lastRow = ws.Cells(ws.rows.Count, 1).End(xlUp).row
 
     zoneCol = GetColByHeader(headerMap, "ZONE")
     blokCol = GetColByHeader(headerMap, "BLOK")
@@ -207,7 +207,7 @@ Sub DeleteInvalidRows(ws As Worksheet, headerMap As Object)
     If hasZone Then zoneCol = GetColByHeader(headerMap, "ZONE")
     If hasNo Then noCol = GetColByHeader(headerMap, "NO")
 
-    lastRow = ws.Cells(ws.rows.Count, "C").End(xlUp).row
+    lastRow = ws.Cells(ws.rows.Count, 1).End(xlUp).row
 
     For i = lastRow To 2 Step -1
         Dim isInvalid As Boolean
@@ -250,7 +250,7 @@ Sub ApplyDwellingStandards(wsData As Worksheet, wsTemplate As Worksheet, _
     If hasPas Then pasCol = GetColByHeader(headerMap, "PAS")
     If hasMinPas Then minPasCol = GetColByHeader(headerMap, "minPAS")
 
-    lastRow = wsData.Cells(wsData.rows.Count, GetLastColumnFromHeaderMap(headerMap)).End(xlUp).row
+    lastRow = wsData.Cells(wsData.rows.Count, 1).End(xlUp).row
 
     For i = 2 To lastRow
         Set rng = wsData.Range(wsData.Cells(i, "A"), wsData.Cells(i, GetLastColumnFromHeaderMap(headerMap)))
@@ -304,9 +304,9 @@ Sub AddTenPercentIndicator(ws As Worksheet, headerMap As Object)
     Dim areaExt As Double, areaCur As Double
 
     ' Exit if required columns don't exist
-    If Not headerMap.Exists("GIFA") Or Not headerMap.Exists("MIN10") Or Not headerMap.Exists("minAREA") Then Exit Sub
+    If Not headerMap.Exists("GIFA") Or Not headerMap.Exists("MIN10") Or Not headerMap.Exists("MINAREA") Then Exit Sub
 
-    lastRow = ws.Cells(ws.rows.Count, GetLastColumnFromHeaderMap(headerMap)).End(xlUp).row
+    lastRow = ws.Cells(ws.rows.Count, 1).End(xlUp).row
 
     areaCol = GetColByHeader(headerMap, "GIFA")
     minAreaCol = GetColByHeader(headerMap, "minAREA")
@@ -364,14 +364,14 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
     Set sumColumns = New Collection
     If headerMap.Exists("NO") Then sumColumns.Add GetColByHeader(headerMap, "NO")
     If headerMap.Exists("GIFA") Then sumColumns.Add GetColByHeader(headerMap, "GIFA")
-    If headerMap.Exists("minAREA") Then sumColumns.Add GetColByHeader(headerMap, "minAREA")
+    If headerMap.Exists("minAREA") Then sumColumns.Add GetColByHeader(headerMap, "MINAREA")
     If headerMap.Exists("BEDS") Then sumColumns.Add GetColByHeader(headerMap, "BEDS")
     If headerMap.Exists("PERS") Then sumColumns.Add GetColByHeader(headerMap, "PERS")
     If headerMap.Exists("DUAL") Then sumColumns.Add GetColByHeader(headerMap, "DUAL")
-    If headerMap.Exists("minPAS") Then sumColumns.Add GetColByHeader(headerMap, "minPAS")
+    If headerMap.Exists("minPAS") Then sumColumns.Add GetColByHeader(headerMap, "MINPAS")
     If headerMap.Exists("PAS") Then sumColumns.Add GetColByHeader(headerMap, "PAS")
-    If headerMap.Exists("minCAS") Then sumColumns.Add GetColByHeader(headerMap, "minCAS")
-    If headerMap.Exists("min10") Then sumColumns.Add GetColByHeader(headerMap, "min10")
+    If headerMap.Exists("minCAS") Then sumColumns.Add GetColByHeader(headerMap, "MINCAS")
+    If headerMap.Exists("min10") Then sumColumns.Add GetColByHeader(headerMap, "MIN10")
 
     ' Find unique bedroom counts and setup tally columns
     Set bedCountsDict = CreateObject("Scripting.Dictionary")

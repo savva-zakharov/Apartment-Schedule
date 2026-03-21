@@ -649,14 +649,17 @@ Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, _
 
         If Len(headerName) > 0 Then
             ' Look up source column using the header map
-            srcCol = GetColByHeader(srcHeaderMap, headerName)
+            If srcHeaderMap.Exists(headerName) Then
+                srcCol = GetColByHeader(srcHeaderMap, headerName)
+            
 
-            If srcCol >= 1 Then
-                ' Found match - copy the entire column (data only, from row 2 onwards)
-                wsSource.Range(wsSource.Cells(2, srcCol), wsSource.Cells(srcLastRow, srcCol)).Copy _
-                    Destination:=wsDest.Cells(2, targetCol)
-                ' Copy the header as well
-                wsDest.Cells(1, targetCol).Value = wsSource.Cells(1, srcCol).Value
+                If srcCol >= 1 Then
+                    ' Found match - copy the entire column (data only, from row 2 onwards)
+                    wsSource.Range(wsSource.Cells(2, srcCol), wsSource.Cells(srcLastRow, srcCol)).Copy _
+                        Destination:=wsDest.Cells(2, targetCol)
+                    ' Copy the header as well
+                    wsDest.Cells(1, targetCol).Value = wsSource.Cells(1, srcCol).Value
+                End If
             End If
         End If
     Next targetCol
@@ -949,6 +952,8 @@ Sub ApplyDwellingLookup(wsData As Worksheet, _
     End If
 
 End Sub
+
+
 
 
 
