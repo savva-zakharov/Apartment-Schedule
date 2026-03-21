@@ -311,7 +311,7 @@ Sub FormatColumnsByPattern(ws As Worksheet, headerMap As Object, _
             colNum = headerMap(key)
 
             If colNum >= 1 And colNum <= 16384 Then
-                With ws.Columns(colNum)
+                With ws.columns(colNum)
                     If applyBold Then
                         .Font.Bold = True
                     End If
@@ -404,7 +404,7 @@ Sub DrawTableWithHeader(rng As Range)
     On Error Resume Next
 
     ' First header row - darker grey
-    Set topRow = rng.Rows(1)
+    Set topRow = rng.rows(1)
     topRow.Interior.Color = RGB(191, 191, 191)
     topRow.Font.Bold = True
     topRow.Font.Color = RGB(0, 0, 0)
@@ -412,12 +412,12 @@ Sub DrawTableWithHeader(rng As Range)
     topRow.VerticalAlignment = xlCenter
 
     ' Second header row - lighter grey
-    Set topRow = rng.Rows(2)
+    Set topRow = rng.rows(2)
     topRow.Interior.Color = RGB(217, 217, 217)
 
     ' Add grid to everything except the headers
-    If rng.Rows.Count > 2 Then
-        Set dataRange = rng.Offset(2, 0).Resize(rng.Rows.Count - 2, rng.Columns.Count)
+    If rng.rows.Count > 2 Then
+        Set dataRange = rng.Offset(2, 0).Resize(rng.rows.Count - 2, rng.columns.Count)
 
         With dataRange.Borders(xlInsideHorizontal)
             .LineStyle = xlContinuous
@@ -466,6 +466,95 @@ Sub DrawTableWithHeader(rng As Range)
     End With
 
     On Error GoTo 0
+End Sub
+
+' ----------------------------------------------------------------------------
+' Formatting Copy Functions
+' ----------------------------------------------------------------------------
+
+' Copy all formatting from a source row and propagate it down to all data rows
+' in the target worksheet. Copies font, interior, number format, alignment, etc.
+Sub CopyRowFormattingDown(wsSource As Worksheet, sourceRow As Long, _
+                          wsTarget As Worksheet, targetStartRow As Long, _
+                          targetEndRow As Long, _
+                          Optional startCol As Long = 1, _
+                          Optional endCol As Long = 0)
+
+    Dim col As Long
+    Dim sourceRange As Range
+    Dim targetRange As Range
+    Dim lastCol As Long
+
+    ' Validate worksheets
+    If wsSource Is Nothing Or wsTarget Is Nothing Then
+        Debug.Print "Error: Worksheet object is Nothing."
+        Exit Sub
+    End If
+
+    ' Validate rows
+    If sourceRow < 1 Or targetStartRow < 1 Or sourceRow > 1048576 Then
+        Debug.Print "Error: Row numbers out of range."
+        Exit Sub
+    End If
+
+    ' Determine end column if not specified
+    If endCol = 0 Then
+        lastCol = wsSource.Cells(sourceRow, wsSource.columns.Count).End(xlToLeft).Column
+        If lastCol < 1 Then lastCol = wsTarget.UsedRange.columns.Count
+        endCol = lastCol
+    End If
+
+    ' Optimize performance
+    Application.ScreenUpdating = False
+
+    ' Copy formatting column by column
+    For col = startCol To endCol
+        Set sourceRange = wsSource.Cells(sourceRow, col)
+
+        For targetStartRow = 1 To targetEndRow
+            Set targetRange = wsTarget.Cells(targetStartRow, col)
+
+            ' Copy font properties
+            With targetRange.Font
+                .Name = sourceRange.Font.Name
+                .Size = sourceRange.Font.Size
+                .Bold = sourceRange.Font.Bold
+                .Italic = sourceRange.Font.Italic
+                .Underline = sourceRange.Font.Underline
+                .Color = sourceRange.Font.Color
+                .Strikethrough = sourceRange.Font.Strikethrough
+                .Superscript = sourceRange.Font.Superscript
+                .Subscript = sourceRange.Font.Subscript
+                .OutlineFont = sourceRange.Font.OutlineFont
+                .Shadow = sourceRange.Font.Shadow
+                .Color = sourceRange.Font.Color
+            End With
+
+            ' Copy interior (fill) properties if there is a colour applies
+            If sourceRange.Interior.Color <> 16777215 Then
+            With targetRange.Interior
+                .Color = sourceRange.Interior.Color
+                .Pattern = sourceRange.Interior.Pattern
+                .PatternColor = sourceRange.Interior.PatternColor
+                .ThemeColor = sourceRange.Interior.ThemeColor
+                .TintAndShade = sourceRange.Interior.TintAndShade
+            End With
+            End If
+
+            ' Copy other formatting
+            targetRange.NumberFormat = sourceRange.NumberFormat
+            targetRange.HorizontalAlignment = sourceRange.HorizontalAlignment
+            targetRange.VerticalAlignment = sourceRange.VerticalAlignment
+            targetRange.WrapText = sourceRange.WrapText
+            targetRange.Orientation = sourceRange.Orientation
+            targetRange.IndentLevel = sourceRange.IndentLevel
+            targetRange.ShrinkToFit = sourceRange.ShrinkToFit
+            targetRange.ReadingOrder = sourceRange.ReadingOrder
+        Next targetStartRow
+    Next col
+
+    ' Restore settings
+    Application.ScreenUpdating = True
 End Sub
 
 ' ----------------------------------------------------------------------------
@@ -546,7 +635,7 @@ Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, _
     Dim srcCol As Long
 
     ' Get the last used row in wsSource
-    srcLastRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    srcLastRow = wsSource.Cells(wsSource.rows.Count, 1).End(xlUp).row
 
     ' Build header map for wsSource
     Set srcHeaderMap = BuildHeaderMap(wsSource, rowSource)
@@ -555,7 +644,7 @@ Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, _
     Set targetHeaderRange = wsTemplate.Range("A" & rowDest & ":Z" & rowDest)
 
     ' Loop through each target column in wsTemplate
-    For targetCol = 1 To targetHeaderRange.Columns.Count
+    For targetCol = 1 To targetHeaderRange.columns.Count
         headerName = Trim(UCase(wsTemplate.Cells(rowDest, targetCol).Value))
 
         If Len(headerName) > 0 Then
@@ -691,7 +780,7 @@ Function FindLookupTable(wsTemplate As Worksheet, lookupName As String, _
     Dim searchRange As Range
     Dim headerRow As Long
 
-    Set searchRange = wsTemplate.Columns("A")
+    Set searchRange = wsTemplate.columns("A")
     Set foundCell = searchRange.Find(What:=lookupName, LookIn:=xlValues, LookAt:=xlWhole)
 
     If foundCell Is Nothing Then
@@ -700,9 +789,9 @@ Function FindLookupTable(wsTemplate As Worksheet, lookupName As String, _
         Exit Function
     End If
 
-    headerRow = foundCell.Row
+    headerRow = foundCell.row
     Set headerMap = BuildHeaderMap(wsTemplate, headerRow)
-    Set FindLookupTable = wsTemplate.Rows(headerRow + 1).Resize(10)
+    Set FindLookupTable = wsTemplate.rows(headerRow + 1).Resize(10)
 
 End Function
 
@@ -754,7 +843,7 @@ Function GetLookupValue(wsTemplate As Worksheet, dwellingType As String, _
 
     ' Return the value from the specified column
     If lookupHeaderMap.Exists(UCase(lookupKey)) Then
-        GetLookupValue = wsTemplate.Cells(foundRow.Row, lookupHeaderMap(UCase(lookupKey))).Value
+        GetLookupValue = wsTemplate.Cells(foundRow.row, lookupHeaderMap(UCase(lookupKey))).Value
     Else
         GetLookupValue = ""
     End If
@@ -818,45 +907,48 @@ Sub ApplyDwellingLookup(wsData As Worksheet, _
     
     ' Apply template colour
     If tempHeaderMap.Exists("COLOUR") Then
-        rngRow.Interior.Color = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "COLOUR")).Interior.Color
+        rngRow.Interior.Color = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "COLOUR")).Interior.Color
     End If
     
     ' Set minimums
     If headerMap.Exists("MINAREA") And tempHeaderMap.Exists("MINAREA") Then
-        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINAREA")).Value
+        wsData.Cells(rowNum, headerMap("MINAREA")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINAREA")).Value
     End If
     If headerMap.Exists("MINPAS") And tempHeaderMap.Exists("MINPAS") Then
-        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINPAS")).Value
+        wsData.Cells(rowNum, headerMap("MINPAS")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINPAS")).Value
     End If
     If headerMap.Exists("MINCAS") And tempHeaderMap.Exists("MINCAS") Then
-        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINCAS")).Value
+        wsData.Cells(rowNum, headerMap("MINCAS")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINCAS")).Value
     End If
     If headerMap.Exists("MINAGBED") And tempHeaderMap.Exists("MINAGBED") Then
-        wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINAGBED")).Value
+        wsData.Cells(rowNum, headerMap("MINAGBED")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINAGBED")).Value
     End If
     If headerMap.Exists("MINLVNG") And tempHeaderMap.Exists("MINLVNG") Then
-        wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINLVNG")).Value
+        wsData.Cells(rowNum, headerMap("MINLVNG")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINLVNG")).Value
     End If
     If headerMap.Exists("MINSTOR") And tempHeaderMap.Exists("MINSTOR") Then
-        wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINSTOR")).Value
+        wsData.Cells(rowNum, headerMap("MINSTOR")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINSTOR")).Value
     End If
     If headerMap.Exists("MINBED1") And tempHeaderMap.Exists("MINBED1") Then
-        wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED1")).Value
+        wsData.Cells(rowNum, headerMap("MINBED1")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED1")).Value
     End If
     If headerMap.Exists("MINBED2") And tempHeaderMap.Exists("MINBED2") Then
-        wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED2")).Value
+        wsData.Cells(rowNum, headerMap("MINBED2")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED2")).Value
     End If
     If headerMap.Exists("MINBED3") And tempHeaderMap.Exists("MINBED3") Then
-        wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED3")).Value
+        wsData.Cells(rowNum, headerMap("MINBED3")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED3")).Value
     End If
     If headerMap.Exists("MINBED4") And tempHeaderMap.Exists("MINBED4") Then
-        wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED4")).Value
+        wsData.Cells(rowNum, headerMap("MINBED4")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED4")).Value
     End If
     If headerMap.Exists("MINBED5") And tempHeaderMap.Exists("MINBED5") Then
-        wsData.Cells(rowNum, headerMap("MINBED5")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINBED5")).Value
+        wsData.Cells(rowNum, headerMap("MINBED5")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINBED5")).Value
     End If
     If headerMap.Exists("MINMAIN") And tempHeaderMap.Exists("MINMAIN") Then
-        wsData.Cells(rowNum, headerMap("MINMAIN")).Value = wsTemplate.Cells(foundRow.Row, GetColByHeader(tempHeaderMap, "MINMAIN")).Value
+        wsData.Cells(rowNum, headerMap("MINMAIN")).Value = wsTemplate.Cells(foundRow.row, GetColByHeader(tempHeaderMap, "MINMAIN")).Value
     End If
 
 End Sub
+
+
+

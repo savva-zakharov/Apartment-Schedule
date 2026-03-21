@@ -303,7 +303,9 @@ Sub UnitTypes()
     Set rng = wsTypes.Range(wsTypes.Cells(2, 1), wsTypes.Cells(outputRow - 1, typeLastCol))
     Call drawBorderThickOutline(rng)
 
-    Call FormatColumnsByPattern(wsTypes, typeHeaderMap, "MIN", True, True, RGB(128, 128, 128))
+    ' Call FormatColumnsByPattern(wsTypes, typeHeaderMap, "MIN", True, True, RGB(128, 128, 128))
+    lastRow = wsTypes.Cells(wsSource.rows.Count, 1).End(xlUp).row
+    Call CopyRowFormattingDown(wsTemplate, 29, wsTypes, 1, lastRow, 1, typeLastCol)
 
     wsTypes.rows(1).Clear
 

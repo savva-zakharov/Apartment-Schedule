@@ -76,9 +76,11 @@ Sub GenerateUnitSchedule()
     Call FormatScheduleWithSummaries(wsLong, wsTemplate, headerMap, lastCol)
     
     ' Copy headers from template
-    wsTemplate.Range("A1:" & ColumnToLetter(lastCol) & "8").Copy
+    
+    wsLong.rows(1).Delete
+    wsLong.rows(1).Resize(3).Insert Shift:=xlDown
+    wsTemplate.rows("1:8").Copy
     wsLong.Range("A1").Insert Shift:=xlDown
-    wsLong.rows("9:9").Delete
     
     ' Add timestamp
     wsLong.Range("E5").Value = FormatDateWithSuffix(Date)
@@ -337,7 +339,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
     Dim currentZone As Variant, previousZone As Variant
     Dim levelStartRow As Long, blockStartRow As Long, zoneStartRow As Long
     Dim changeLevel As Collection, changeBlock As Collection, changeZone As Collection
-    Dim sumColumns As Collection, sumTypeColumns As Collection, percentCalcColumns As Collection
+    Dim sumColumns As Collection, percentCalcColumns As Collection
     Dim bedCountsDict As Object, tally As Object
     Dim bedKeys As Variant, bCount As Variant
     Dim colLet As Long, resColLet As Long, b1 As Long, b2 As Long, tempB As Variant
@@ -374,7 +376,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
     ' Find unique bedroom counts and setup tally columns
     Set bedCountsDict = CreateObject("Scripting.Dictionary")
     Set tally = CreateObject("Scripting.Dictionary")
-    Set sumTypeColumns = New Collection
+    ' Set sumTypeColumns = New Collection
     Set percentCalcColumns = New Collection
 
     lastRow = ws.Cells(ws.rows.Count, "C").End(xlUp).row
@@ -404,7 +406,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
 
     ' Create tally columns
     Dim startCol As Long
-    startCol = lastCol + 4
+    startCol = lastCol + 2
 
     For b1 = LBound(bedKeys) To UBound(bedKeys)
         bCount = bedKeys(b1)
@@ -412,18 +414,17 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
             colLet = startCol + b1
             tally.Add bCount, colLet
             ws.Cells(1, colLet).Value = bCount & " BED"
-            sumTypeColumns.Add colLet
-            resColLet = colLet + 4
-            percentCalcColumns.Add resColLet
+            sumColumns.Add colLet
+            percentCalcColumns.Add colLet
         End If
     Next b1
 
     If headerMap.Exists("min10") Then percentCalcColumns.Add GetColByHeader(headerMap, "min10")
     If headerMap.Exists("DUAL") Then percentCalcColumns.Add GetColByHeader(headerMap, "DUAL")
 
-    ' Insert initial empty rows
-    ws.rows(2).Resize(3).Insert Shift:=xlDown
-    lastRow = lastRow + 3
+    'Apply formating from template to new columns
+
+    Call CopyRowFormattingDown(wsTemplate, 9, ws, 3, lastRow, 1, lastCol)
 
     ' Initialize regex
     Set re1 = CreateObject("VBScript.RegExp")
@@ -443,16 +444,31 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
     End With
 
     ' Initialize loop variables with safety checks
-    i = 5
+    
+    
+    ws.rows(2).Resize(1).Insert Shift:=xlDown
+
+    
+    i = 3
     If hasLevel Then previousLevel = ws.Cells(5, GetColByHeader(headerMap, "LEVL")).Value
     If hasBlock Then previousBlock = ws.Cells(5, GetColByHeader(headerMap, "BLOK")).Value
     If hasZone Then previousZone = ws.Cells(5, GetColByHeader(headerMap, "ZONE")).Value
-    levelStartRow = 5
-    blockStartRow = 5
-    zoneStartRow = 5
+    levelStartRow = i
+    blockStartRow = i
+    zoneStartRow = i
 
     ' Main loop through schedule
     Do While True
+        'add counts for bedroom counts
+
+        If headerMap.Exists("BEDS") Then
+            bVal = ws.Cells(i, GetColByHeader(headerMap, "BEDS")).Value
+            If IsNumeric(bVal) And tally.Exists(CDbl(bVal)) Then
+                ws.Cells(i, tally(CDbl(bVal))).Value = 1
+            End If
+        End If
+        
+    
         ' Get current values with safety checks
         If hasLevel Then currentLevel = ws.Cells(i, GetColByHeader(headerMap, "LEVL")).Value
         If hasBlock Then currentBlock = ws.Cells(i, GetColByHeader(headerMap, "BLOK")).Value
@@ -481,7 +497,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
 
             ' Add summaries for level change
             Call sumColumnsSub(ws, sumColumns, levelStartRow, i, 0, True)
-            Call sumColumnsSub(ws, sumTypeColumns, levelStartRow, i, 4, False)
+            ' Call sumColumnsSub(ws, sumTypeColumns, levelStartRow, i, 4, False)
             Call percentColumnsSub(ws, percentCalcColumns, i, 0)
 
             ' Add borders
@@ -548,7 +564,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
                         .HorizontalAlignment = xlLeft
                     End With
 
-                    Call sumColumnsSub(ws, sumTypeColumns, blockStartRow, i, 4, False)
+                    ' Call sumColumnsSub(ws, sumTypeColumns, blockStartRow, i, 4, False)
                     Call percentColumnsSub(ws, percentCalcColumns, i, 0)
                     Call sumColumnsRowsSub(ws, sumColumns, changeLevel, i)
 
@@ -601,6 +617,8 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
     
     Call drawBorderLine(ws, i, lastCol)
 
+    i = i - 1
+
     With ws.Cells(i - 1, "B")
         .Value = "Whole Scheme Summary"
         .Font.Bold = True
@@ -609,7 +627,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
         .HorizontalAlignment = xlLeft
     End With
 
-    Call sumColumnsSub(ws, sumTypeColumns, 4, i, 4, False)
+    ' Call sumColumnsSub(ws, sumTypeColumns, 4, i, 4, False)
     Call percentColumnsSub(ws, percentCalcColumns, i, 0)
     
     ' Determine which collection to use for final summary based on available columns
@@ -637,28 +655,6 @@ Sub FormatScheduleColumns(ws As Worksheet, headerMap As Object, lastCol As Long)
     
     lastRow = ws.Cells(ws.rows.Count, "A").End(xlUp).row
     
-    ' Center align columns
-    If headerMap.Exists("NO") Then
-        With ws.Range(ws.Cells(1, GetColByHeader(headerMap, "NO")), ws.Cells(lastRow, GetColByHeader(headerMap, "NO")))
-            .HorizontalAlignment = xlCenter
-            .Font.Bold = True
-        End With
-    End If
-    If headerMap.Exists("ZONE") Then
-        With ws.Range(ws.Cells(1, GetColByHeader(headerMap, "ZONE")), ws.Cells(lastRow, GetColByHeader(headerMap, "ZONE")))
-            .HorizontalAlignment = xlCenter
-        End With
-    End If
-    If headerMap.Exists("BLOK") Then
-        With ws.Range(ws.Cells(1, GetColByHeader(headerMap, "BLOK")), ws.Cells(lastRow, GetColByHeader(headerMap, "BLOK")))
-            .HorizontalAlignment = xlCenter
-        End With
-    End If
-    If headerMap.Exists("LEVL") Then
-        With ws.Range(ws.Cells(1, GetColByHeader(headerMap, "LEVL")), ws.Cells(lastRow, GetColByHeader(headerMap, "LEVL")))
-            .HorizontalAlignment = xlCenter
-        End With
-    End If
     If headerMap.Exists("BEDTYPE") Then
         With ws.Range(ws.Cells(1, GetColByHeader(headerMap, "BEDTYPE")), ws.Cells(lastRow, GetColByHeader(headerMap, "BEDTYPE")))
             .HorizontalAlignment = xlLeft
@@ -666,22 +662,15 @@ Sub FormatScheduleColumns(ws As Worksheet, headerMap As Object, lastCol As Long)
         End With
         ws.columns(GetColByHeader(headerMap, "BEDTYPE")).AutoFit
     End If
+       
     
     
     
-    ' Grey columns for minimums
-    With ws.columns("F").Font
-        .Color = RGB(128, 128, 128)
-        .Bold = True
-    End With
-    With ws.columns("K").Font
-        .Color = RGB(128, 128, 128)
-        .Bold = True
-    End With
-    With ws.columns("M").Font
-        .Color = RGB(128, 128, 128)
-        .Bold = True
-    End With
+
 End Sub
+
+
+
+
 
 
