@@ -107,7 +107,7 @@ Sub GenerateUnitShort()
     Application.DisplayAlerts = True
 
     ' Copy headers from template
-    wsTemplate.Range("A10:N17").Copy
+    wsTemplate.Range("A10:AB17").Copy
     wsShort.Range("A1").Insert Shift:=xlDown
     wsTemplate.Range("BA1:BR8").Copy
     wsShort.Range("S1").Insert Shift:=xlDown
@@ -239,14 +239,21 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
         Next i
     End If
 
-    ' Sort groups by bedroom count, then dwelling type, ascending
+    ' Sort groups by dwelling type (Apartment, then Duplex, then House, always
+    ' in that order regardless of bedroom count), then by bedroom count ascending
     groupKeys = groupDict.Keys
     For b1 = LBound(groupKeys) To UBound(groupKeys) - 1
         For b2 = b1 + 1 To UBound(groupKeys)
             Dim itemA As Variant, itemB As Variant
+            Dim rankA As Long, rankB As Long
+            Dim typeA As String, typeB As String
             itemA = groupDict(groupKeys(b1))
             itemB = groupDict(groupKeys(b2))
-            If itemA(0) > itemB(0) Or (itemA(0) = itemB(0) And itemA(1) > itemB(1)) Then
+            typeA = CStr(itemA(1))
+            typeB = CStr(itemB(1))
+            rankA = DwellingTypeRank(typeA)
+            rankB = DwellingTypeRank(typeB)
+            If rankA > rankB Or (rankA = rankB And itemA(0) > itemB(0)) Then
                 tempKey = groupKeys(b1)
                 groupKeys(b1) = groupKeys(b2)
                 groupKeys(b2) = tempKey
@@ -483,4 +490,18 @@ Function AggregateWorkRange(ws As Worksheet, col As Long, startRow As Long, endR
     Else
         AggregateWorkRange = Application.WorksheetFunction.Sum(ws.Range(ws.Cells(startRow, col), ws.Cells(endRow, col)))
     End If
+End Function
+
+' ============================================================================
+' Fixed sort order for mix columns: Apartment, then Duplex, then House,
+' regardless of bedroom count. Anything else (e.g. GetUnitTitle's "Unit"
+' fallback) sorts last.
+' ============================================================================
+Function DwellingTypeRank(dwellingType As String) As Long
+    Select Case UCase(dwellingType)
+        Case "APARTMENT": DwellingTypeRank = 0
+        Case "DUPLEX": DwellingTypeRank = 1
+        Case "HOUSE": DwellingTypeRank = 2
+        Case Else: DwellingTypeRank = 3
+    End Select
 End Function
