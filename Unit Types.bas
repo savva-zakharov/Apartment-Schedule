@@ -130,12 +130,29 @@ Sub UnitTypes()
     Dim unitType
     Dim unitKey
     Dim tempArr
-    
+
     lastRow = wsSource.Cells(wsSource.rows.Count, 1).End(xlUp).row
 
+    ' Columns used to disregard invalid rows (marked "XX")
+    Dim levlCol As Long, blokCol As Long, noCol As Long
+    Dim hasLevl As Boolean, hasBlok As Boolean, hasNo As Boolean
+    hasLevl = sourceHeaderMap.Exists("LEVL")
+    hasBlok = sourceHeaderMap.Exists("BLOK")
+    hasNo = sourceHeaderMap.Exists("NO")
+    If hasLevl Then levlCol = GetColByHeader(sourceHeaderMap, "LEVL")
+    If hasBlok Then blokCol = GetColByHeader(sourceHeaderMap, "BLOK")
+    If hasNo Then noCol = GetColByHeader(sourceHeaderMap, "NO")
+
     For i = 2 To lastRow
+        ' Disregard rows marked "XX" in LEVL, BLOK or NO
+        If (hasLevl And wsSource.Cells(i, levlCol).Value = "XX") _
+        Or (hasBlok And wsSource.Cells(i, blokCol).Value = "XX") _
+        Or (hasNo And wsSource.Cells(i, noCol).Value = "XX") Then
+            GoTo NextRow
+        End If
+
         unitType = wsSource.Cells(i, GetColByHeader(sourceHeaderMap, "TYPE")).Value
-    
+
         If Len(unitType) > 0 And reTypes.Test(unitType) Then
     
             ' Use regex match as the dictionary key
@@ -151,8 +168,9 @@ Sub UnitTypes()
                 typeDict(unitKey) = tempArr
             End If
         End If
+NextRow:
     Next i
-    
+
 
     Dim outputRow As Long
     outputRow = 2
