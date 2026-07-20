@@ -84,7 +84,9 @@ Sub GenerateUnitShort()
 
     ' Build the condensed level/block/whole-scheme summary
     Dim shortLastCol As Long
-    shortLastCol = BuildShortSummary(wsWork, wsShort, headerMap, lastCol)
+    Dim tallyLabels As Collection ' Array(column, label, reference colour) per tallied bed/type combo
+    Set tallyLabels = New Collection
+    shortLastCol = BuildShortSummary(wsWork, wsShort, headerMap, lastCol, tallyLabels)
 
     ' Discard the working sheet
     Application.DisplayAlerts = False
@@ -97,12 +99,23 @@ Sub GenerateUnitShort()
     wsTemplate.Range("BA1:BR8").Copy
     wsShort.Range("S1").Insert Shift:=xlDown
 
+    ' Label the tallied bed/type columns in the header row, coloured to match
+    ' the fill used for that dwelling type in the schedule itself
+    Dim tallyEntry As Variant
+    For Each tallyEntry In tallyLabels
+        With wsShort.Cells(8, tallyEntry(0))
+            .Value = tallyEntry(1)
+            .Interior.Color = tallyEntry(2)
+            .Font.Bold = True
+        End With
+    Next tallyEntry
+
     ' Add timestamp
     wsShort.Range("E5").Value = FormatDateWithSuffix(Date)
 
     ' Set print area
     lastRow = wsShort.Cells(wsShort.rows.Count, "B").End(xlUp).row
-    wsShort.PageSetup.PrintArea = "A1:" & ColumnToLetter(shortLastCol) & lastRow
+    wsShort.PageSetup.PrintArea = "A1:" & ColumnToLetter(shortLastCol) & (lastRow + 2)
 
     ' Activate and show print preview
     wsShort.Activate
@@ -130,7 +143,8 @@ End Sub
 ' extends further), for use in borders and the print area.
 ' ============================================================================
 Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
-                     headerMap As Object, lastCol As Long) As Long
+                     headerMap As Object, lastCol As Long, _
+                     ByRef tallyLabels As Collection) As Long
 
     Dim lastRowWork As Long
     Dim i As Long
@@ -198,7 +212,7 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
                 bVal = CDbl(bVal)
                 dwellingType = GetUnitTitle(wsWork, i, headerMap)
                 groupKey = bVal & "|" & dwellingType
-                If Not groupDict.Exists(groupKey) Then groupDict.Add groupKey, Array(bVal, dwellingType)
+                If Not groupDict.Exists(groupKey) Then groupDict.Add groupKey, Array(bVal, dwellingType, i)
             End If
         Next i
     End If
@@ -227,13 +241,15 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
     shortLastCol = lastCol
 
     Dim grp As Variant
+    Dim refColor As Long
     For b1 = LBound(groupKeys) To UBound(groupKeys)
         grp = groupDict(groupKeys(b1))
         tally.Add groupKeys(b1), workTallyStartCol + b1
         workTallyCols.Add workTallyStartCol + b1
         shortTallyCols.Add shortTallyStartCol + b1
         percentCalcColumns.Add shortTallyStartCol + b1
-        wsShort.Cells(1, shortTallyStartCol + b1).Value = grp(0) & " BED " & UCase(grp(1))
+        refColor = wsWork.Cells(grp(2), 1).Interior.Color
+        tallyLabels.Add Array(shortTallyStartCol + b1, grp(0) & " Bed " & grp(1), refColor)
         If shortTallyStartCol + b1 > shortLastCol Then shortLastCol = shortTallyStartCol + b1
     Next b1
 
@@ -333,11 +349,11 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
 
                     Call drawBorderThickOutline(wsShort.Range( _
                         wsShort.Cells(shortBlockStartRow, "A"), _
-                        wsShort.Cells(iShort, shortLastCol)))
+                        wsShort.Cells(iShort - 1, shortLastCol)))
 
                     shortChangeBlock.Add iShort
 
-                    iShort = iShort + 3
+                    iShort = iShort + 4 ' total row + percent row + 2 blank spacer rows before the next block
                     shortBlockStartRow = iShort
 
                     previousBlock = currentBlock
