@@ -4,8 +4,8 @@ Option Explicit
 ' UNIT SHORT MODULE
 ' Generates the condensed "Short" schedule (level/block/whole-scheme totals
 ' only, no per-unit rows) from wsSource data. Bed count breakdowns are split
-' by dwelling type, e.g. "2 Bed Apartment", "2 Bed House" and "2 Bed Duplex"
-' are tallied as separate columns.
+' by person count and dwelling type, e.g. "2B 3P Apartment" and "2B 4P
+' Apartment" are tallied as separate columns.
 '
 ' The Short schedule's own column layout is a custom table defined by
 ' template row 18 (mirroring how row 9 defines the Long schedule's layout -
@@ -90,6 +90,17 @@ Sub GenerateUnitShort()
     Set wsShort = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
     wsShort.Name = "Short " & currentDate
 
+    ' Paste the template header art onto the still-blank sheet FIRST, before
+    ' BuildShortSummary makes any column inserts for the mix columns. A real
+    ' Excel column insert shifts every row in the affected columns uniformly
+    ' - including this header art - so it stays correctly aligned with the
+    ' data without needing any separate row/column shifting logic afterwards.
+    wsTemplate.Range("A10:AB17").Copy
+    wsShort.Range("A1").PasteSpecial Paste:=xlPasteAll
+    wsTemplate.Range("BA1:BR8").Copy
+    wsShort.Range("S1").PasteSpecial Paste:=xlPasteAll
+    Application.CutCopyMode = False
+
     ' The Short schedule's own column layout - a custom table defined by row 18,
     ' the same way row 9 defines the Long schedule's layout
     Dim headerMapShort As Object
@@ -98,58 +109,56 @@ Sub GenerateUnitShort()
     ' Build the condensed level/block/whole-scheme summary
     Dim shortLastCol As Long
     Dim tallyLabels As Collection ' Array(column, label, reference colour) per tallied bed/type combo
+    Dim mixZones As Collection    ' Array(start column, column count, zone name) per expanded mix zone
     Set tallyLabels = New Collection
-    shortLastCol = BuildShortSummary(wsWork, wsShort, headerMap, headerMapShort, lastCol, tallyLabels)
+    Set mixZones = New Collection
+    shortLastCol = BuildShortSummary(wsWork, wsShort, headerMap, headerMapShort, lastCol, tallyLabels, mixZones)
 
     ' Discard the working sheet
     Application.DisplayAlerts = False
     wsWork.Delete
     Application.DisplayAlerts = True
 
-    ' Copy headers from template
-    wsTemplate.Range("A10:AB17").Copy
-    wsShort.Range("A1").Insert Shift:=xlDown
-    wsTemplate.Range("BA1:BR8").Copy
-    wsShort.Range("S1").Insert Shift:=xlDown
+    ' Fill the gap left by each mix zone's expansion. The column insert made
+    ' during BuildShortSummary already shifted the header art along with the
+    ' data, so all that's left is: format the newly inserted (still blank)
+    ' columns to match the zone's first column, and merge/centre row 7's title
+    ' across the whole span.
+    Dim zi As Long, zoneStartCol As Long, zoneShiftBy As Long, zoneEndCol As Long
+    Dim zoneData As Variant
+    For zi = 1 To mixZones.Count
+        zoneData = mixZones(zi)
+        zoneStartCol = zoneData(0)
+        zoneShiftBy = zoneData(1) - 1
+        zoneEndCol = zoneStartCol + zoneShiftBy
 
-    ' Before labelling the mix columns, shift everything in rows 7 & 8 to the
-    ' right of MIX out of the way, to make room for the extra mix columns
-    If tallyLabels.Count > 1 Then
-        Dim mixStartCol As Long, mixEndCol As Long, shiftBy As Long, headerLastCol As Long
-        mixStartCol = tallyLabels(1)(0)
-        shiftBy = tallyLabels.Count - 1
-        mixEndCol = mixStartCol + shiftBy
+        wsShort.Range(wsShort.Cells(7, zoneStartCol), wsShort.Cells(8, zoneStartCol)).Copy
+        wsShort.Range(wsShort.Cells(7, zoneStartCol + 1), wsShort.Cells(8, zoneEndCol)).PasteSpecial Paste:=xlPasteFormats
 
-        headerLastCol = Application.WorksheetFunction.Max( _
-            wsShort.Cells(7, wsShort.columns.Count).End(xlToLeft).Column, _
-            wsShort.Cells(8, wsShort.columns.Count).End(xlToLeft).Column)
-
-        If headerLastCol > mixStartCol Then
-            wsShort.Range(wsShort.Cells(7, mixStartCol + 1), wsShort.Cells(8, headerLastCol)).Cut _
-                Destination:=wsShort.Cells(7, mixStartCol + 1 + shiftBy)
-        End If
-
-        ' Fill the gap: copy the MIX column's formatting into every newly
-        ' vacated column, then merge and centre row 7 across the whole mix span
-        wsShort.Range(wsShort.Cells(7, mixStartCol), wsShort.Cells(8, mixStartCol)).Copy
-        wsShort.Range(wsShort.Cells(7, mixStartCol + 1), wsShort.Cells(8, mixEndCol)).PasteSpecial Paste:=xlPasteFormats
-
-        With wsShort.Range(wsShort.Cells(7, mixStartCol), wsShort.Cells(7, mixEndCol))
+        With wsShort.Range(wsShort.Cells(7, zoneStartCol), wsShort.Cells(7, zoneEndCol))
             .Merge
             .HorizontalAlignment = xlCenter
             .VerticalAlignment = xlCenter
         End With
 
-        Application.CutCopyMode = False
-    End If
+        ' The Total Mix zone gets its own title, replacing whatever the
+        ' template originally had over the single TMIX column
+        If zoneData(2) = "TMIX" Then
+            With wsShort.Cells(7, zoneStartCol)
+                .Value = "Total Mix"
+            End With
+        End If
+    Next zi
+    Application.CutCopyMode = False
 
     ' Label the tallied bed/type columns in the header row, coloured to match
-    ' the fill used for that dwelling type in the schedule itself
+    ' the fill used for that dwelling type in the schedule itself (Total Mix
+    ' columns carry no dwelling-type colour, signalled by a negative value)
     Dim tallyEntry As Variant
     For Each tallyEntry In tallyLabels
         With wsShort.Cells(8, tallyEntry(0))
             .Value = tallyEntry(1)
-            .Interior.Color = tallyEntry(2)
+            If tallyEntry(2) >= 0 Then .Interior.Color = tallyEntry(2)
             .Font.Bold = True
             .WrapText = True
         End With
@@ -190,7 +199,7 @@ End Sub
 ' ============================================================================
 Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
                      headerMap As Object, headerMapShort As Object, lastCol As Long, _
-                     ByRef tallyLabels As Collection) As Long
+                     ByRef tallyLabels As Collection, ByRef mixZones As Collection) As Long
 
     Dim lastRowWork As Long
     Dim i As Long
@@ -205,14 +214,20 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
     Dim statCols As Collection        ' Array(wsWork read column, wsShort write column, isNoField)
     Dim workTallyCols As Collection   ' bed count + dwelling type tally columns in wsWork (scratch positions)
     Dim shortTallyCols As Collection  ' bed count + dwelling type tally columns in wsShort (at/after the MIX column)
+    Dim workTotalTallyCols As Collection ' bed count only (Total Mix) tally columns in wsWork (scratch positions)
+    Dim tmixTallyCols As Collection      ' bed count only (Total Mix) tally columns in wsShort (at/after the TMIX column)
     Dim percentCalcColumns As Collection
     Dim shortChangeBlock As Collection
-    Dim groupDict As Object          ' "bedCount|DwellingType" -> Array(bedCount, DwellingType, wsWork row)
-    Dim groupKeys As Variant, bVal As Variant
+    Dim groupDict As Object          ' "bedCount|persCount|DwellingType" -> Array(bedCount, persCount, DwellingType, wsWork row)
+    Dim groupKeys As Variant, bVal As Variant, persVal As Double
+    Dim totalDict As Object          ' bedCount -> Array(bedCount, wsWork row)
+    Dim totalKeys As Variant
     Dim dwellingType As String, groupKey As String
     Dim b1 As Long, b2 As Long, tempKey As Variant
     Dim workTallyStartCol As Long
     Dim mixCol As Long, numGroups As Long
+    Dim tmixCol As Long, numBedGroups As Long
+    Dim mixExists As Boolean, tmixExists As Boolean
     Dim re1 As Object
     Dim blockTitle As String
     Dim shortLastCol As Long
@@ -223,8 +238,8 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
 
     lastRowWork = wsWork.Cells(wsWork.rows.Count, 1).End(xlUp).row
 
-    ' --- Find unique (bedroom count, dwelling type) combinations ---
-    ' e.g. "2 Bed Apartment", "2 Bed House" and "2 Bed Duplex" are tallied separately.
+    ' --- Find unique (bedroom count, person count, dwelling type) combinations ---
+    ' e.g. "2B 3P Apartment" and "2B 4P Apartment" are tallied as separate columns.
     Set groupDict = CreateObject("Scripting.Dictionary")
 
     If headerMap.Exists("BEDS") Then
@@ -233,14 +248,16 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
             If IsNumeric(bVal) And Len(bVal) > 0 Then
                 bVal = CDbl(bVal)
                 dwellingType = GetUnitTitle(wsWork, i, headerMap)
-                groupKey = bVal & "|" & dwellingType
-                If Not groupDict.Exists(groupKey) Then groupDict.Add groupKey, Array(bVal, dwellingType, i)
+                persVal = GetPersValue(wsWork, i, headerMap)
+                groupKey = bVal & "|" & persVal & "|" & dwellingType
+                If Not groupDict.Exists(groupKey) Then groupDict.Add groupKey, Array(bVal, persVal, dwellingType, i)
             End If
         Next i
     End If
 
     ' Sort groups by dwelling type (Apartment, then Duplex, then House, always
-    ' in that order regardless of bedroom count), then by bedroom count ascending
+    ' in that order regardless of bedroom count), then by bedroom count, then
+    ' by person count, all ascending
     groupKeys = groupDict.Keys
     For b1 = LBound(groupKeys) To UBound(groupKeys) - 1
         For b2 = b1 + 1 To UBound(groupKeys)
@@ -249,11 +266,13 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
             Dim typeA As String, typeB As String
             itemA = groupDict(groupKeys(b1))
             itemB = groupDict(groupKeys(b2))
-            typeA = CStr(itemA(1))
-            typeB = CStr(itemB(1))
+            typeA = CStr(itemA(2))
+            typeB = CStr(itemB(2))
             rankA = DwellingTypeRank(typeA)
             rankB = DwellingTypeRank(typeB)
-            If rankA > rankB Or (rankA = rankB And itemA(0) > itemB(0)) Then
+            If rankA > rankB _
+            Or (rankA = rankB And itemA(0) > itemB(0)) _
+            Or (rankA = rankB And itemA(0) = itemB(0) And itemA(1) > itemB(1)) Then
                 tempKey = groupKeys(b1)
                 groupKeys(b1) = groupKeys(b2)
                 groupKeys(b2) = tempKey
@@ -262,24 +281,61 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
     Next b1
     numGroups = UBound(groupKeys) - LBound(groupKeys) + 1
 
+    ' --- Find unique bedroom counts for the Total Mix (bed count only,
+    ' regardless of dwelling type) ---
+    Set totalDict = CreateObject("Scripting.Dictionary")
+
+    If headerMap.Exists("BEDS") Then
+        For i = 2 To lastRowWork
+            bVal = wsWork.Cells(i, GetColByHeader(headerMap, "BEDS")).Value
+            If IsNumeric(bVal) And Len(bVal) > 0 Then
+                bVal = CDbl(bVal)
+                If Not totalDict.Exists(bVal) Then totalDict.Add bVal, Array(bVal, i)
+            End If
+        Next i
+    End If
+
+    ' Sort by bedroom count ascending
+    totalKeys = totalDict.Keys
+    For b1 = LBound(totalKeys) To UBound(totalKeys) - 1
+        For b2 = b1 + 1 To UBound(totalKeys)
+            If totalKeys(b1) > totalKeys(b2) Then
+                tempKey = totalKeys(b1)
+                totalKeys(b1) = totalKeys(b2)
+                totalKeys(b2) = tempKey
+            End If
+        Next b2
+    Next b1
+    numBedGroups = UBound(totalKeys) - LBound(totalKeys) + 1
+
     ' --- Place the tally columns at the "MIX" column, expanding it with extra
-    ' columns as needed to fit every (bed count, dwelling type) combination ---
-    If headerMapShort.Exists("MIX") Then
+    ' columns as needed to fit every (bed count, dwelling type) combination.
+    ' Total Mix is optional: only created when a "TMIX" column is defined,
+    ' expanding it the same way to fit every bedroom count found. ---
+    mixExists = headerMapShort.Exists("MIX")
+    tmixExists = headerMapShort.Exists("TMIX")
+
+    If mixExists Then
         mixCol = GetColByHeader(headerMapShort, "MIX")
         If numGroups > 1 Then
             wsShort.columns(mixCol + 1).Resize(, numGroups - 1).Insert Shift:=xlToRight
-            ' Shift any custom-table field positioned after MIX to account for the new columns
-            Dim hKey As Variant
-            For Each hKey In headerMapShort.Keys
-                If headerMapShort(hKey) > mixCol Then
-                    headerMapShort(hKey) = headerMapShort(hKey) + (numGroups - 1)
-                End If
-            Next hKey
+            Call ShiftHeaderMapShortColumns(headerMapShort, mixCol, numGroups - 1)
         End If
     Else
         ' No MIX column defined in the custom table - fall back to placing
         ' tallies just past it so nothing gets overwritten
         mixCol = GetLastColumnFromHeaderMap(headerMapShort) + 2
+    End If
+
+    If tmixExists Then
+        ' Re-fetch TMIX's position now, in case the MIX insert above shifted it
+        tmixCol = GetColByHeader(headerMapShort, "TMIX")
+        If numBedGroups > 1 Then
+            wsShort.columns(tmixCol + 1).Resize(, numBedGroups - 1).Insert Shift:=xlToRight
+            Call ShiftHeaderMapShortColumns(headerMapShort, tmixCol, numBedGroups - 1)
+            ' TMIX may have sat to the left of MIX - re-resolve MIX in case it just shifted
+            If mixExists Then mixCol = GetColByHeader(headerMapShort, "MIX")
+        End If
     End If
 
     ' --- Main-stat columns: read from wsWork (row 9 layout), write to wsShort
@@ -318,20 +374,52 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
         workTallyCols.Add workTallyStartCol + b1
         shortTallyCols.Add mixCol + b1
         percentCalcColumns.Add mixCol + b1
-        refColor = wsWork.Cells(grp(2), 1).Interior.Color
-        tallyLabels.Add Array(mixCol + b1, grp(0) & " Bed " & grp(1), refColor)
+        refColor = wsWork.Cells(grp(3), 1).Interior.Color
+        tallyLabels.Add Array(mixCol + b1, grp(0) & "B " & grp(1) & "P " & grp(2), refColor)
         If mixCol + b1 > shortLastCol Then shortLastCol = mixCol + b1
     Next b1
+    If numGroups > 1 Then mixZones.Add Array(mixCol, numGroups, "MIX")
 
-    ' Flag each unit row with a 1 in its (bed count, dwelling type) tally column
+    ' --- Total Mix tally columns: bed count only, regardless of dwelling type ---
+    Set workTotalTallyCols = New Collection
+    Set tmixTallyCols = New Collection
+    Dim totalTally As Object ' bedCount -> wsWork tally column
+    Set totalTally = CreateObject("Scripting.Dictionary")
+
+    If tmixExists Then
+        Dim workTotalTallyStartCol As Long
+        Dim totalItem As Variant
+        workTotalTallyStartCol = workTallyStartCol + numGroups
+
+        For b1 = LBound(totalKeys) To UBound(totalKeys)
+            totalItem = totalDict(totalKeys(b1))
+            totalTally.Add totalKeys(b1), workTotalTallyStartCol + b1
+            workTotalTallyCols.Add workTotalTallyStartCol + b1
+            tmixTallyCols.Add tmixCol + b1
+            percentCalcColumns.Add tmixCol + b1
+            tallyLabels.Add Array(tmixCol + b1, totalItem(0) & " Bed Total", -1)
+            If tmixCol + b1 > shortLastCol Then shortLastCol = tmixCol + b1
+        Next b1
+        If numBedGroups > 1 Then mixZones.Add Array(tmixCol, numBedGroups, "TMIX")
+    End If
+
+    ' Flag each unit row with a 1 in its (bed count, person count, dwelling
+    ' type) tally column, and separately in its (bed count only) Total Mix
+    ' tally column
     If headerMap.Exists("BEDS") Then
         For i = 2 To lastRowWork
             bVal = wsWork.Cells(i, GetColByHeader(headerMap, "BEDS")).Value
             If IsNumeric(bVal) And Len(bVal) > 0 Then
                 dwellingType = GetUnitTitle(wsWork, i, headerMap)
-                groupKey = CDbl(bVal) & "|" & dwellingType
+                persVal = GetPersValue(wsWork, i, headerMap)
+                groupKey = CDbl(bVal) & "|" & persVal & "|" & dwellingType
                 If tally.Exists(groupKey) Then
                     wsWork.Cells(i, tally(groupKey)).Value = 1
+                End If
+                If tmixExists Then
+                    If totalTally.Exists(CDbl(bVal)) Then
+                        wsWork.Cells(i, totalTally(CDbl(bVal))).Value = 1
+                    End If
                 End If
             End If
         Next i
@@ -345,6 +433,9 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
     Next c
     For c = 1 To shortTallyCols.Count
         shortSumColumns.Add shortTallyCols(c)
+    Next c
+    For c = 1 To tmixTallyCols.Count
+        shortSumColumns.Add tmixTallyCols(c)
     Next c
 
     Set re1 = CreateObject("VBScript.RegExp")
@@ -361,7 +452,7 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
 
     If Not hasLevel And Not hasBlock And Not hasZone Then
         ' No grouping columns available - summarize the whole dataset as one group
-        iShort = 2
+        iShort = 9 ' the template header occupies wsShort rows 1-8
         wsShort.Cells(iShort, "B").Value = "Units"
         For c = 1 To statCols.Count
             readCol = statCols(c)(0)
@@ -374,16 +465,21 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
             shortCol = shortTallyCols(c)
             wsShort.Cells(iShort, shortCol).Value = AggregateWorkRange(wsWork, workCol, 2, lastRowWork)
         Next c
+        For c = 1 To workTotalTallyCols.Count
+            workCol = workTotalTallyCols(c)
+            shortCol = tmixTallyCols(c)
+            wsShort.Cells(iShort, shortCol).Value = AggregateWorkRange(wsWork, workCol, 2, lastRowWork)
+        Next c
         shortChangeBlock.Add iShort
         iShort = iShort + 1
     Else
-        iShort = 2
+        iShort = 9 ' the template header occupies wsShort rows 1-8
         i = 2
         If hasLevel Then previousLevel = wsWork.Cells(2, GetColByHeader(headerMap, "LEVL")).Value
         If hasBlock Then previousBlock = wsWork.Cells(2, GetColByHeader(headerMap, "BLOK")).Value
         If hasZone Then previousZone = wsWork.Cells(2, GetColByHeader(headerMap, "ZONE")).Value
         levelStartRow = 2
-        shortBlockStartRow = 2
+        shortBlockStartRow = 9
 
         Do While True
             If hasLevel Then currentLevel = wsWork.Cells(i, GetColByHeader(headerMap, "LEVL")).Value
@@ -406,6 +502,11 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
                 For c = 1 To workTallyCols.Count
                     workCol = workTallyCols(c)
                     shortCol = shortTallyCols(c)
+                    wsShort.Cells(iShort, shortCol).Value = AggregateWorkRange(wsWork, workCol, levelStartRow, i - 1)
+                Next c
+                For c = 1 To workTotalTallyCols.Count
+                    workCol = workTotalTallyCols(c)
+                    shortCol = tmixTallyCols(c)
                     wsShort.Cells(iShort, shortCol).Value = AggregateWorkRange(wsWork, workCol, levelStartRow, i - 1)
                 Next c
                 iShort = iShort + 1
@@ -468,7 +569,7 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
     If shortChangeBlock.Count > 0 Then
         Call sumColumnsRowsSub(wsShort, shortSumColumns, shortChangeBlock, iShort)
     Else
-        Call sumColumnsSub(wsShort, shortSumColumns, 2, iShort, 0, False)
+        Call sumColumnsSub(wsShort, shortSumColumns, 9, iShort, 0, False)
     End If
     Call percentColumnsSub(wsShort, percentCalcColumns, iShort, 0)
 
@@ -493,6 +594,20 @@ Function AggregateWorkRange(ws As Worksheet, col As Long, startRow As Long, endR
 End Function
 
 ' ============================================================================
+' Shift every headerMapShort column position greater than afterCol by
+' shiftAmount, in place - keeps the custom-table field map correct after a
+' column insert on wsShort.
+' ============================================================================
+Sub ShiftHeaderMapShortColumns(headerMapShort As Object, afterCol As Long, shiftAmount As Long)
+    Dim hKey As Variant
+    For Each hKey In headerMapShort.Keys
+        If headerMapShort(hKey) > afterCol Then
+            headerMapShort(hKey) = headerMapShort(hKey) + shiftAmount
+        End If
+    Next hKey
+End Sub
+
+' ============================================================================
 ' Fixed sort order for mix columns: Apartment, then Duplex, then House,
 ' regardless of bedroom count. Anything else (e.g. GetUnitTitle's "Unit"
 ' fallback) sorts last.
@@ -504,4 +619,20 @@ Function DwellingTypeRank(dwellingType As String) As Long
         Case "HOUSE": DwellingTypeRank = 2
         Case Else: DwellingTypeRank = 3
     End Select
+End Function
+
+' ============================================================================
+' Read a row's PERS (person count) value. Returns 0 if the PERS column is
+' missing or the cell isn't numeric, so callers don't need to special-case it.
+' ============================================================================
+Function GetPersValue(ws As Worksheet, row As Long, headerMap As Object) As Double
+    Dim v As Variant
+    If headerMap.Exists("PERS") Then
+        v = ws.Cells(row, GetColByHeader(headerMap, "PERS")).Value
+        If IsNumeric(v) And Len(v) > 0 Then
+            GetPersValue = CDbl(v)
+            Exit Function
+        End If
+    End If
+    GetPersValue = 0
 End Function
