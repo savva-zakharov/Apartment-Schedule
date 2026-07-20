@@ -1,5 +1,10 @@
 Option Explicit
 
+' ============================================================================
+' UNIT TYPES MODULE
+' Generates formatted unit types from wsSource data
+' ============================================================================
+
 Sub UnitTypes()
     Dim wsSource As Worksheet
     Dim wsTypes As Worksheet

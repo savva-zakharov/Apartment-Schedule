@@ -614,10 +614,9 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
         Call drawBorderThickOutline(rng)
         i = i + 3
     End If
-    
-    Call drawBorderLine(ws, i, lastCol)
 
     i = i - 1
+    Call drawBorderLine(ws, i, lastCol)   
 
     With ws.Cells(i - 1, "B")
         .Value = "Whole Scheme Summary"
