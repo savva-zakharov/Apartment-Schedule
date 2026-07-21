@@ -452,7 +452,7 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
 
     If Not hasLevel And Not hasBlock And Not hasZone Then
         ' No grouping columns available - summarize the whole dataset as one group
-        iShort = 9 ' the template header occupies wsShort rows 1-8
+        iShort = 11 ' the template header occupies wsShort rows 1-8
         wsShort.Cells(iShort, "B").Value = "Units"
         For c = 1 To statCols.Count
             readCol = statCols(c)(0)
@@ -473,13 +473,13 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
         shortChangeBlock.Add iShort
         iShort = iShort + 1
     Else
-        iShort = 9 ' the template header occupies wsShort rows 1-8
+        iShort = 11 ' the template header occupies wsShort rows 1-8
         i = 2
         If hasLevel Then previousLevel = wsWork.Cells(2, GetColByHeader(headerMap, "LEVL")).Value
         If hasBlock Then previousBlock = wsWork.Cells(2, GetColByHeader(headerMap, "BLOK")).Value
         If hasZone Then previousZone = wsWork.Cells(2, GetColByHeader(headerMap, "ZONE")).Value
         levelStartRow = 2
-        shortBlockStartRow = 9
+        shortBlockStartRow = iShort
 
         Do While True
             If hasLevel Then currentLevel = wsWork.Cells(i, GetColByHeader(headerMap, "LEVL")).Value
@@ -636,3 +636,5 @@ Function GetPersValue(ws As Worksheet, row As Long, headerMap As Object) As Doub
     End If
     GetPersValue = 0
 End Function
+
+
