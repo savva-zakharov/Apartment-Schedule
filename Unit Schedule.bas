@@ -71,7 +71,10 @@ Sub GenerateUnitSchedule()
     
     ' Add 10% indicator
     Call AddTenPercentIndicator(wsLong, headerMap)
-    
+
+    ' Add aggregate bedroom area (sum of BED1-BED5) per unit
+    Call AddAggregateBedroomArea(wsLong, headerMap)
+
     ' Format schedule with level/block/zone summaries
     Call FormatScheduleWithSummaries(wsLong, wsTemplate, headerMap, lastCol)
     
@@ -152,31 +155,31 @@ Sub SortSchedule(ws As Worksheet, headerMap As Object, lastCol As Long)
     zoneCol = GetColByHeader(headerMap, "ZONE")
     blokCol = GetColByHeader(headerMap, "BLOK")
     levelCol = GetColByHeader(headerMap, "LEVL")
-    noCol = GetColByHeader(headerMap, "NO")
+    noCol = FindColumnByAliases(headerMap, Array("NO", "NO.", "NUM", "UNIT NO", "UNIT NO."))
 
     With ws.Sort
         .SortFields.Clear
-        
+
         ' Sort by ZONE if header exists
         If headerMap.Exists("ZONE") And zoneCol > 0 Then
             .SortFields.Add key:=ws.Range(ws.Cells(2, zoneCol), ws.Cells(lastRow, zoneCol)), _
                 Order:=xlAscending
         End If
-        
+
         ' Sort by BLOK if header exists
         If headerMap.Exists("BLOK") And blokCol > 0 Then
             .SortFields.Add key:=ws.Range(ws.Cells(2, blokCol), ws.Cells(lastRow, blokCol)), _
                 Order:=xlAscending
         End If
-        
+
         ' Sort by LEVL if header exists
         If headerMap.Exists("LEVL") And levelCol > 0 Then
             .SortFields.Add key:=ws.Range(ws.Cells(2, levelCol), ws.Cells(lastRow, levelCol)), _
                 Order:=xlAscending
         End If
-        
-        ' Sort by NO (unit number) if header exists
-        If headerMap.Exists("NO") And noCol > 0 Then
+
+        ' Sort by NO (unit number) if header exists, under any common spelling
+        If noCol > 0 Then
             .SortFields.Add key:=ws.Range(ws.Cells(2, noCol), ws.Cells(lastRow, noCol)), _
                 Order:=xlAscending
         End If
@@ -200,12 +203,13 @@ Sub DeleteInvalidRows(ws As Worksheet, headerMap As Object)
     hasBlok = headerMap.Exists("BLOK")
     hasLevel = headerMap.Exists("LEVL")
     hasZone = headerMap.Exists("ZONE")
-    hasNo = headerMap.Exists("NO")
 
     If hasBlok Then blokCol = GetColByHeader(headerMap, "BLOK")
     If hasLevel Then levelCol = GetColByHeader(headerMap, "LEVL")
     If hasZone Then zoneCol = GetColByHeader(headerMap, "ZONE")
-    If hasNo Then noCol = GetColByHeader(headerMap, "NO")
+
+    noCol = FindColumnByAliases(headerMap, Array("NO", "NO.", "NUM", "UNIT NO", "UNIT NO."))
+    hasNo = (noCol > 0)
 
     lastRow = ws.Cells(ws.rows.Count, 1).End(xlUp).row
 
@@ -213,10 +217,20 @@ Sub DeleteInvalidRows(ws As Worksheet, headerMap As Object)
         Dim isInvalid As Boolean
         isInvalid = False
         
-        If hasBlok And ws.Cells(i, blokCol).Value = "XX" Then isInvalid = True
-        If hasLevel And ws.Cells(i, levelCol).Value = "XX" Then isInvalid = True
-        If hasZone And ws.Cells(i, zoneCol).Value = "XX" Then isInvalid = True
-        If hasNo And ws.Cells(i, noCol).Value = "XX" Then isInvalid = True
+        ' Nested Ifs, not "hasX And ws.Cells(...)" - VBA's And does not short-circuit,
+        ' so the Cells() read would still run (and error on column 0) even when hasX is False
+        If hasBlok Then
+            If ws.Cells(i, blokCol).Value = "XX" Then isInvalid = True
+        End If
+        If hasLevel Then
+            If ws.Cells(i, levelCol).Value = "XX" Then isInvalid = True
+        End If
+        If hasZone Then
+            If ws.Cells(i, zoneCol).Value = "XX" Then isInvalid = True
+        End If
+        If hasNo Then
+            If ws.Cells(i, noCol).Value = "XX" Then isInvalid = True
+        End If
         
         If isInvalid Then ws.rows(i).Delete
     Next i
@@ -327,6 +341,37 @@ Sub AddTenPercentIndicator(ws As Worksheet, headerMap As Object)
 End Sub
 
 ' ============================================================================
+' Compute each unit's aggregate bedroom area (sum of BED1-BED5) into AGBED.
+' Safely handles missing columns - AGBED is skipped entirely if not present,
+' and each BED1-BED5 field is only added if it exists.
+' ============================================================================
+Sub AddAggregateBedroomArea(ws As Worksheet, headerMap As Object)
+    Dim lastRow As Long
+    Dim i As Long
+    Dim agbedCol As Long
+    Dim unitBedroomArea As Double
+    Dim bedFields As Variant
+    Dim f As Long
+
+    If Not headerMap.Exists("AGBED") Then Exit Sub
+
+    agbedCol = GetColByHeader(headerMap, "AGBED")
+    bedFields = Array("BED1", "BED2", "BED3", "BED4", "BED5")
+
+    lastRow = ws.Cells(ws.rows.Count, 1).End(xlUp).row
+
+    For i = 2 To lastRow
+        unitBedroomArea = 0
+        For f = LBound(bedFields) To UBound(bedFields)
+            If headerMap.Exists(CStr(bedFields(f))) Then
+                unitBedroomArea = unitBedroomArea + Val(ws.Cells(i, GetColByHeader(headerMap, CStr(bedFields(f)))).Value)
+            End If
+        Next f
+        ws.Cells(i, agbedCol).Value = unitBedroomArea
+    Next i
+End Sub
+
+' ============================================================================
 ' Format schedule with level, block, and zone summaries
 ' Handles missing ZONE/BLOK/LEVL columns gracefully
 ' ============================================================================
@@ -362,7 +407,9 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
 
     ' Setup sum columns with safety checks
     Set sumColumns = New Collection
-    If headerMap.Exists("NO") Then sumColumns.Add GetColByHeader(headerMap, "NO")
+    Dim noColForSum As Long
+    noColForSum = FindColumnByAliases(headerMap, Array("NO", "NO.", "NUM", "UNIT NO", "UNIT NO."))
+    If noColForSum > 0 Then sumColumns.Add noColForSum
     If headerMap.Exists("GIFA") Then sumColumns.Add GetColByHeader(headerMap, "GIFA")
     If headerMap.Exists("minAREA") Then sumColumns.Add GetColByHeader(headerMap, "MINAREA")
     If headerMap.Exists("BEDS") Then sumColumns.Add GetColByHeader(headerMap, "BEDS")
@@ -496,7 +543,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
             ws.rows(i).Resize(3).Interior.ColorIndex = -4142
 
             ' Add summaries for level change
-            Call sumColumnsSub(ws, sumColumns, levelStartRow, i, 0, True)
+            Call sumColumnsSub(ws, sumColumns, levelStartRow, i, 0, noColForSum > 0)
             ' Call sumColumnsSub(ws, sumTypeColumns, levelStartRow, i, 4, False)
             Call percentColumnsSub(ws, percentCalcColumns, i, 0)
 
@@ -546,10 +593,12 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
                     blockTitle = "Summary"
                 End If
 
-                changeBlock.Add i + 3
                 ws.rows(i).Resize(3).Interior.ColorIndex = -4142
 
-                ' Only add block summary if we have meaningful grouping
+                ' Only add a block summary section if we have meaningful grouping.
+                ' Either way, this block's contribution must reach changeBlock so
+                ' the zone summary (below) totals correctly even when no block
+                ' summary row was actually written.
                 If (Not hasLevel Or previousLevel <> 0) And previousLevel <> "NA" Then
                     i = i + 3
                     ws.rows(i).Resize(3).Insert Shift:=xlDown
@@ -568,26 +617,37 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
                     Call percentColumnsSub(ws, percentCalcColumns, i, 0)
                     Call sumColumnsRowsSub(ws, sumColumns, changeLevel, i)
 
-                    ' Handle zone changes
-                    If zoneChanged And hasZone Then
-                        i = i + 3
-                        ws.rows(i).Resize(3).Insert Shift:=xlDown
-                        changeZone.Add i
-                        Call drawBorderLine(ws, i, lastCol)
-
-                        With ws.Cells(i - 1, "B")
-                            .Value = "Zone " & previousZone & " Summary"
-                            .Font.Bold = True
-                            .Font.Color = RGB(0, 176, 240)
-                            .Font.Name = "Calibri"
-                            .HorizontalAlignment = xlLeft
-                        End With
-
-                        Call sumColumnsRowsSub(ws, sumColumns, changeBlock, i)
-                        previousZone = currentZone
-                        Set changeBlock = New Collection
-                    End If
+                    changeBlock.Add i
+                Else
+                    ' No block summary written - fold this block's own level
+                    ' rows straight into the zone total instead of losing them
+                    Dim clItem As Variant
+                    For Each clItem In changeLevel
+                        changeBlock.Add clItem
+                    Next clItem
                 End If
+
+                ' Handle zone changes - always, regardless of whether a block
+                ' summary was written above
+                If zoneChanged And hasZone Then
+                    i = i + 3
+                    ws.rows(i).Resize(3).Insert Shift:=xlDown
+                    changeZone.Add i
+                    Call drawBorderLine(ws, i, lastCol)
+
+                    With ws.Cells(i - 1, "B")
+                        .Value = "Zone " & previousZone & " Summary"
+                        .Font.Bold = True
+                        .Font.Color = RGB(0, 176, 240)
+                        .Font.Name = "Calibri"
+                        .HorizontalAlignment = xlLeft
+                    End With
+
+                    Call sumColumnsRowsSub(ws, sumColumns, changeBlock, i)
+                    Set changeBlock = New Collection
+                End If
+
+                previousZone = currentZone
 
                 blockStartRow = i + 1
                 Set changeLevel = New Collection
@@ -638,7 +698,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
         Call sumColumnsRowsSub(ws, sumColumns, changeLevel, i)
     Else
         ' No grouping - just sum all rows
-        Call sumColumnsSub(ws, sumColumns, 4, i, 0, True)
+        Call sumColumnsSub(ws, sumColumns, 4, i, 0, noColForSum > 0)
     End If
 
     ' Final formatting

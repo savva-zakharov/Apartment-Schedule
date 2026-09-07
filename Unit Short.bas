@@ -112,7 +112,7 @@ Sub GenerateUnitShort()
     Dim mixZones As Collection    ' Array(start column, column count, zone name) per expanded mix zone
     Set tallyLabels = New Collection
     Set mixZones = New Collection
-    shortLastCol = BuildShortSummary(wsWork, wsShort, headerMap, headerMapShort, lastCol, tallyLabels, mixZones)
+    shortLastCol = BuildShortSummary(wsWork, wsShort, wsTemplate, headerMap, headerMapShort, lastCol, tallyLabels, mixZones)
 
     ' Discard the working sheet
     Application.DisplayAlerts = False
@@ -197,7 +197,7 @@ End Sub
 ' layout, decoupled from headerMap (row 9), which describes wsWork's layout.
 ' Returns the right-most column used, for use in borders and the print area.
 ' ============================================================================
-Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
+Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, wsTemplate As Worksheet, _
                      headerMap As Object, headerMapShort As Object, lastCol As Long, _
                      ByRef tallyLabels As Collection, ByRef mixZones As Collection) As Long
 
@@ -231,12 +231,23 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
     Dim re1 As Object
     Dim blockTitle As String
     Dim shortLastCol As Long
+    Dim headerMapShortRaw As Object  ' snapshot of headerMapShort before any MIX/TMIX column inserts
+    Dim formatSourceMap As Object    ' wsShort column (final) -> wsTemplate row-18 column (raw), for formatting
 
     hasZone = headerMap.Exists("ZONE")
     hasBlock = headerMap.Exists("BLOK")
     hasLevel = headerMap.Exists("LEVL")
 
     lastRowWork = wsWork.Cells(wsWork.rows.Count, 1).End(xlUp).row
+
+    ' Snapshot the custom table's column layout before it gets mutated by the
+    ' MIX/TMIX column inserts below, so per-level rows can later copy each
+    ' field's formatting from its original template cell to its final column.
+    Set headerMapShortRaw = CreateObject("Scripting.Dictionary")
+    Dim hKeySnap As Variant
+    For Each hKeySnap In headerMapShort.Keys
+        headerMapShortRaw.Add hKeySnap, headerMapShort(hKeySnap)
+    Next hKeySnap
 
     ' --- Find unique (bedroom count, person count, dwelling type) combinations ---
     ' e.g. "2B 3P Apartment" and "2B 4P Apartment" are tallied as separate columns.
@@ -403,6 +414,35 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
         If numBedGroups > 1 Then mixZones.Add Array(tmixCol, numBedGroups, "TMIX")
     End If
 
+    ' --- Map each wsShort column back to the template row-18 cell whose
+    ' formatting it should inherit, so per-level rows can be styled to match
+    ' the custom table regardless of how the MIX/TMIX inserts shifted things ---
+    Set formatSourceMap = CreateObject("Scripting.Dictionary")
+    Dim fmKey As Variant, finalColForKey As Long
+    For Each fmKey In headerMapShortRaw.Keys
+        finalColForKey = GetColByHeader(headerMapShort, CStr(fmKey))
+        If Not formatSourceMap.Exists(finalColForKey) Then
+            formatSourceMap.Add finalColForKey, headerMapShortRaw(fmKey)
+        End If
+    Next fmKey
+
+    ' The extra MIX/TMIX tally columns don't have their own row-18 entry -
+    ' they all inherit the original single "MIX"/"TMIX" cell's formatting
+    If mixExists Then
+        Dim rawMixColForFormat As Long
+        rawMixColForFormat = headerMapShortRaw("MIX")
+        For b1 = 0 To numGroups - 1
+            If Not formatSourceMap.Exists(mixCol + b1) Then formatSourceMap.Add mixCol + b1, rawMixColForFormat
+        Next b1
+    End If
+    If tmixExists Then
+        Dim rawTmixColForFormat As Long
+        rawTmixColForFormat = headerMapShortRaw("TMIX")
+        For b1 = 0 To numBedGroups - 1
+            If Not formatSourceMap.Exists(tmixCol + b1) Then formatSourceMap.Add tmixCol + b1, rawTmixColForFormat
+        Next b1
+    End If
+
     ' Flag each unit row with a 1 in its (bed count, person count, dwelling
     ' type) tally column, and separately in its (bed count only) Total Mix
     ' tally column
@@ -470,6 +510,7 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
             shortCol = tmixTallyCols(c)
             wsShort.Cells(iShort, shortCol).Value = AggregateWorkRange(wsWork, workCol, 2, lastRowWork)
         Next c
+        Call ApplyRowFormatting(wsTemplate, wsShort, formatSourceMap, iShort)
         shortChangeBlock.Add iShort
         iShort = iShort + 1
     Else
@@ -509,6 +550,7 @@ Function BuildShortSummary(wsWork As Worksheet, wsShort As Worksheet, _
                     shortCol = tmixTallyCols(c)
                     wsShort.Cells(iShort, shortCol).Value = AggregateWorkRange(wsWork, workCol, levelStartRow, i - 1)
                 Next c
+                Call ApplyRowFormatting(wsTemplate, wsShort, formatSourceMap, iShort)
                 iShort = iShort + 1
 
                 If blockChanged Then
@@ -605,6 +647,40 @@ Sub ShiftHeaderMapShortColumns(headerMapShort As Object, afterCol As Long, shift
             headerMapShort(hKey) = headerMapShort(hKey) + shiftAmount
         End If
     Next hKey
+End Sub
+
+' ============================================================================
+' Apply each column's template row-18 formatting to a just-written per-level
+' row in wsShort, using formatSourceMap (wsShort column -> template row-18
+' column) to account for any shift caused by the MIX/TMIX column inserts.
+' ============================================================================
+Sub ApplyRowFormatting(wsTemplate As Worksheet, wsShort As Worksheet, _
+                      formatSourceMap As Object, targetRow As Long)
+    Dim fsKey As Variant
+    For Each fsKey In formatSourceMap.Keys
+        Call CopyCellFormat(wsTemplate.Cells(18, formatSourceMap(fsKey)), wsShort.Cells(targetRow, CLng(fsKey)))
+    Next fsKey
+End Sub
+
+' ============================================================================
+' Copy font, fill (if not plain white), number format, alignment and wrap
+' from one cell to another.
+' ============================================================================
+Sub CopyCellFormat(sourceCell As Range, destCell As Range)
+    With destCell
+        .Font.Name = sourceCell.Font.Name
+        .Font.Size = sourceCell.Font.Size
+        .Font.Bold = sourceCell.Font.Bold
+        .Font.Italic = sourceCell.Font.Italic
+        .Font.Color = sourceCell.Font.Color
+        If sourceCell.Interior.Color <> 16777215 Then
+            .Interior.Color = sourceCell.Interior.Color
+        End If
+        .NumberFormat = sourceCell.NumberFormat
+        .HorizontalAlignment = sourceCell.HorizontalAlignment
+        .VerticalAlignment = sourceCell.VerticalAlignment
+        .WrapText = sourceCell.WrapText
+    End With
 End Sub
 
 ' ============================================================================

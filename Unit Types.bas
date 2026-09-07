@@ -144,12 +144,22 @@ Sub UnitTypes()
     If hasNo Then noCol = GetColByHeader(sourceHeaderMap, "NO")
 
     For i = 2 To lastRow
-        ' Disregard rows marked "XX" in LEVL, BLOK or NO
-        If (hasLevl And wsSource.Cells(i, levlCol).Value = "XX") _
-        Or (hasBlok And wsSource.Cells(i, blokCol).Value = "XX") _
-        Or (hasNo And wsSource.Cells(i, noCol).Value = "XX") Then
-            GoTo NextRow
+        ' Disregard rows marked "XX" in LEVL, BLOK or NO.
+        ' Nested Ifs, not "hasX And wsSource.Cells(...)" - VBA's And does not
+        ' short-circuit, so the Cells() read would still run (and error on
+        ' column 0) even when hasX is False
+        Dim isXXRow As Boolean
+        isXXRow = False
+        If hasLevl Then
+            If wsSource.Cells(i, levlCol).Value = "XX" Then isXXRow = True
         End If
+        If hasBlok Then
+            If wsSource.Cells(i, blokCol).Value = "XX" Then isXXRow = True
+        End If
+        If hasNo Then
+            If wsSource.Cells(i, noCol).Value = "XX" Then isXXRow = True
+        End If
+        If isXXRow Then GoTo NextRow
 
         unitType = wsSource.Cells(i, GetColByHeader(sourceHeaderMap, "TYPE")).Value
 

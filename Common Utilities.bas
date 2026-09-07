@@ -149,6 +149,28 @@ Function GetColByHeader(headerMap As Object, headerName As String) As Long
     End If
 End Function
 
+' Find a column by trying several possible header spellings, case-insensitive
+' (e.g. "NO", "NO.", "NUM" for a unit-number column). Returns 0 if none of
+' the aliases exist in headerMap - callers should check for 0 rather than
+' relying on GetColByHeader's column-1 fallback.
+Function FindColumnByAliases(headerMap As Object, aliases As Variant) As Long
+    Dim idx As Long
+
+    If headerMap Is Nothing Then
+        FindColumnByAliases = 0
+        Exit Function
+    End If
+
+    For idx = LBound(aliases) To UBound(aliases)
+        If headerMap.Exists(UCase(CStr(aliases(idx)))) Then
+            FindColumnByAliases = GetColByHeader(headerMap, CStr(aliases(idx)))
+            Exit Function
+        End If
+    Next idx
+
+    FindColumnByAliases = 0
+End Function
+
 ' Get the maximum column number from a header map
 Function GetLastColumnFromHeaderMap(headerMap As Object) As Long
     Dim key As Variant
