@@ -419,20 +419,42 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
     Set changeZone = New Collection
     Set finalSummaryCollection = New Collection
 
-    ' Setup sum columns with safety checks
+    ' Setup sum columns. The template drives this: tag a header cell on the
+    ' mapping row (row 9) with a trailing sigma and that column is totalled on
+    ' every level/block/zone summary row - see the header marker functions in
+    ' Common Utilities. BuildHeaderMap strips the markers, so a tagged column
+    ' still maps under its plain name.
     Set sumColumns = New Collection
     Dim noColForSum As Long
+    Dim templateSumColumns As Collection
+    Dim templatePercentColumns As Collection
+    Dim sumCol As Variant
+    Dim percentCol As Variant
+
     noColForSum = FindColumnByAliases(headerMap, Array("NO", "NO.", "NUM", "UNIT NO", "UNIT NO."))
+    Set templateSumColumns = BuildSumColumns(wsTemplate, 9)
+
+    ' NO goes in first whatever the template says - sumColumnsSub turns the
+    ' first entry into a COUNTA (the unit count) rather than a SUM
     If noColForSum > 0 Then sumColumns.Add noColForSum
-    If headerMap.Exists("GIFA") Then sumColumns.Add GetColByHeader(headerMap, "GIFA")
-    If headerMap.Exists("minAREA") Then sumColumns.Add GetColByHeader(headerMap, "MINAREA")
-    If headerMap.Exists("BEDS") Then sumColumns.Add GetColByHeader(headerMap, "BEDS")
-    If headerMap.Exists("PERS") Then sumColumns.Add GetColByHeader(headerMap, "PERS")
-    If headerMap.Exists("DUAL") Then sumColumns.Add GetColByHeader(headerMap, "DUAL")
-    If headerMap.Exists("minPAS") Then sumColumns.Add GetColByHeader(headerMap, "MINPAS")
-    If headerMap.Exists("PAS") Then sumColumns.Add GetColByHeader(headerMap, "PAS")
-    If headerMap.Exists("minCAS") Then sumColumns.Add GetColByHeader(headerMap, "MINCAS")
-    If headerMap.Exists("min10") Then sumColumns.Add GetColByHeader(headerMap, "MIN10")
+
+    If templateSumColumns.Count > 0 Then
+        For Each sumCol In templateSumColumns
+            If sumCol <> noColForSum Then sumColumns.Add sumCol
+        Next sumCol
+    Else
+        ' No markers in the template - fall back to the columns this module
+        ' has always summed, so an older template is unaffected
+        If headerMap.Exists("GIFA") Then sumColumns.Add GetColByHeader(headerMap, "GIFA")
+        If headerMap.Exists("minAREA") Then sumColumns.Add GetColByHeader(headerMap, "MINAREA")
+        If headerMap.Exists("BEDS") Then sumColumns.Add GetColByHeader(headerMap, "BEDS")
+        If headerMap.Exists("PERS") Then sumColumns.Add GetColByHeader(headerMap, "PERS")
+        If headerMap.Exists("DUAL") Then sumColumns.Add GetColByHeader(headerMap, "DUAL")
+        If headerMap.Exists("minPAS") Then sumColumns.Add GetColByHeader(headerMap, "MINPAS")
+        If headerMap.Exists("PAS") Then sumColumns.Add GetColByHeader(headerMap, "PAS")
+        If headerMap.Exists("minCAS") Then sumColumns.Add GetColByHeader(headerMap, "MINCAS")
+        If headerMap.Exists("min10") Then sumColumns.Add GetColByHeader(headerMap, "MIN10")
+    End If
 
     ' Find unique bedroom counts and setup tally columns
     Set bedCountsDict = CreateObject("Scripting.Dictionary")
@@ -480,8 +502,24 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
         End If
     Next b1
 
-    If headerMap.Exists("min10") Then percentCalcColumns.Add GetColByHeader(headerMap, "min10")
-    If headerMap.Exists("DUAL") Then percentCalcColumns.Add GetColByHeader(headerMap, "DUAL")
+    ' Percent columns are driven the same way: tag a header cell on the mapping
+    ' row with a trailing "%" and that column gets a percentage-of-total row
+    ' under each summary row. A cell that is only "%" is a column named "%",
+    ' not a tagged one, so the types block's own % column is left alone.
+    ' The bedroom tally columns above are added whatever the template says -
+    ' they are generated here, not declared in it.
+    Set templatePercentColumns = BuildPercentColumns(wsTemplate, 9)
+
+    If templatePercentColumns.Count > 0 Then
+        For Each percentCol In templatePercentColumns
+            percentCalcColumns.Add percentCol
+        Next percentCol
+    Else
+        ' No markers in the template - fall back to the columns this module has
+        ' always shown a percentage for, so an older template is unaffected
+        If headerMap.Exists("min10") Then percentCalcColumns.Add GetColByHeader(headerMap, "min10")
+        If headerMap.Exists("DUAL") Then percentCalcColumns.Add GetColByHeader(headerMap, "DUAL")
+    End If
 
     'Apply formating from template to new columns
 

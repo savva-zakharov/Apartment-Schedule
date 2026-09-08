@@ -180,6 +180,155 @@ ErrorHandler:
 End Function
 
 ' ----------------------------------------------------------------------------
+' Header Marker Functions
+' ----------------------------------------------------------------------------
+
+' A header cell on a mapping row can be tagged with trailing marker characters
+' that say what the summary rows should do with that column:
+'
+'   sigma  - total the column     e.g. a cell reading GIFA followed by a sigma
+'   %      - percentage of total  e.g. a cell reading DUAL followed by a %
+'
+' Both can be combined on one cell, in either order. The mapping row (row 9 for
+' the schedule, row 29 for the types block) is only ever read, never copied to
+' the output, so the markers cost nothing on the printed sheet.
+'
+' The sigma is matched by code point rather than written literally: VBA exports
+' .bas files as Windows-1252, which has no sigma, so a literal one would not
+' survive an export/import round trip.
+Private Function IsSumMarkerChar(ch As String) As Boolean
+    If Len(ch) = 0 Then Exit Function
+
+    Select Case AscW(ch)
+        Case &H3A3   ' greek capital letter sigma
+            IsSumMarkerChar = True
+        Case &H3C3   ' greek small letter sigma
+            IsSumMarkerChar = True
+        Case &H2211  ' n-ary summation, what Insert > Symbol tends to give
+            IsSumMarkerChar = True
+    End Select
+End Function
+
+Private Function IsPercentMarkerChar(ch As String) As Boolean
+    If Len(ch) = 0 Then Exit Function
+
+    Select Case AscW(ch)
+        Case &H25    ' percent sign
+            IsPercentMarkerChar = True
+        Case &HFF05  ' fullwidth percent sign
+            IsPercentMarkerChar = True
+    End Select
+End Function
+
+Private Function IsMarkerChar(ch As String) As Boolean
+    IsMarkerChar = IsSumMarkerChar(ch) Or IsPercentMarkerChar(ch)
+End Function
+
+' Split a header cell into the column name and the run of markers at its end
+Private Sub SplitHeaderMarkers(ByVal headerText As String, _
+                               ByRef headerName As String, _
+                               ByRef markers As String)
+    Dim s As String
+
+    s = Trim(headerText)
+    markers = ""
+
+    ' Len(s) > 1 stops the whole cell being eaten: a header that is nothing but
+    ' a marker is a column literally named "%" - the types block has one - not a
+    ' tagged column
+    Do While Len(s) > 1
+        If Not IsMarkerChar(Right(s, 1)) Then Exit Do
+        markers = Right(s, 1) & markers
+        s = Trim(Left(s, Len(s) - 1))
+    Loop
+
+    headerName = s
+End Sub
+
+' Header text with any trailing markers removed - use this everywhere a header
+' cell is read, so a tagged column still matches its plain name
+Function StripHeaderMarkers(headerText As String) As String
+    Dim headerName As String
+    Dim markers As String
+
+    SplitHeaderMarkers headerText, headerName, markers
+    StripHeaderMarkers = headerName
+End Function
+
+' True when a header cell is tagged for summing
+Function HasSumMarker(headerText As String) As Boolean
+    Dim headerName As String
+    Dim markers As String
+    Dim i As Long
+
+    SplitHeaderMarkers headerText, headerName, markers
+
+    For i = 1 To Len(markers)
+        If IsSumMarkerChar(Mid(markers, i, 1)) Then
+            HasSumMarker = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+' True when a header cell is tagged for a percentage of total
+Function HasPercentMarker(headerText As String) As Boolean
+    Dim headerName As String
+    Dim markers As String
+    Dim i As Long
+
+    SplitHeaderMarkers headerText, headerName, markers
+
+    For i = 1 To Len(markers)
+        If IsPercentMarkerChar(Mid(markers, i, 1)) Then
+            HasPercentMarker = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+' Columns tagged with one kind of marker on a header row, left to right
+Private Function BuildMarkedColumns(ws As Worksheet, headerRow As Long, _
+                                    wantPercent As Boolean) As Collection
+    Dim result As Collection
+    Dim col As Long
+    Dim cellText As String
+    Dim isMarked As Boolean
+
+    Set result = New Collection
+    Set BuildMarkedColumns = result
+
+    If ws Is Nothing Then Exit Function
+    If headerRow < 1 Or headerRow > 1048576 Then Exit Function
+
+    ' Same 1-100 sweep BuildHeaderMap uses, so the two always agree
+    On Error Resume Next
+    For col = 1 To 100
+        cellText = CStr(ws.Cells(headerRow, col).Value)
+        If wantPercent Then
+            isMarked = HasPercentMarker(cellText)
+        Else
+            isMarked = HasSumMarker(cellText)
+        End If
+        If isMarked Then result.Add col
+    Next col
+    On Error GoTo 0
+End Function
+
+' Collect the columns tagged for summing on a header row, left to right.
+' Returns an empty collection when the row carries no markers at all, which
+' callers use to fall back to their own defaults - so an untagged template
+' keeps behaving exactly as it did before.
+Function BuildSumColumns(ws As Worksheet, headerRow As Long) As Collection
+    Set BuildSumColumns = BuildMarkedColumns(ws, headerRow, False)
+End Function
+
+' Collect the columns tagged for a percentage of total, same contract
+Function BuildPercentColumns(ws As Worksheet, headerRow As Long) As Collection
+    Set BuildPercentColumns = BuildMarkedColumns(ws, headerRow, True)
+End Function
+
+' ----------------------------------------------------------------------------
 ' Header Map Functions
 ' ----------------------------------------------------------------------------
 
@@ -206,9 +355,12 @@ Function BuildHeaderMap(ws As Worksheet, headerRow As Long) As Object
     On Error Resume Next
     For col = 1 To 100
         If ws.Cells(headerRow, col).Value <> "" Then
-            headerName = UCase(Trim(ws.Cells(headerRow, col).Value))
-            If Not headerMap.Exists(headerName) Then
-                headerMap.Add headerName, col
+            ' Strip the markers so a tagged cell maps under its plain name
+            headerName = UCase(StripHeaderMarkers(CStr(ws.Cells(headerRow, col).Value)))
+            If Len(headerName) > 0 Then
+                If Not headerMap.Exists(headerName) Then
+                    headerMap.Add headerName, col
+                End If
             End If
         End If
     Next col
@@ -750,7 +902,9 @@ Sub CopyColumnsByHeader(wsSource As Worksheet, wsDest As Worksheet, _
 
     ' Loop through each target column in wsTemplate
     For targetCol = 1 To targetHeaderRange.columns.Count
-        headerName = Trim(UCase(wsTemplate.Cells(rowDest, targetCol).Value))
+        ' Strip the markers too, or a tagged template column stops matching
+        ' its source header and never gets imported
+        headerName = UCase(StripHeaderMarkers(CStr(wsTemplate.Cells(rowDest, targetCol).Value)))
 
         If Len(headerName) > 0 Then
             ' Look up source column using the header map
