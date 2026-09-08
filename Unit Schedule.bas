@@ -462,7 +462,11 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
     ' Set sumTypeColumns = New Collection
     Set percentCalcColumns = New Collection
 
-    lastRow = ws.Cells(ws.rows.Count, "C").End(xlUp).row
+    ' Measured across every column, not up column C. Walking up one column
+    ' stops at the first gap from the bottom, and Excel sorts blanks last, so
+    ' a zone whose units carry no block or level sits below that gap. Those
+    ' rows were dropping out of both the bedroom tally and the formatting.
+    lastRow = GetLastDataRow(ws)
 
     Dim bVal As Variant
     If headerMap.Exists("BEDS") Then
@@ -521,9 +525,9 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
         If headerMap.Exists("DUAL") Then percentCalcColumns.Add GetColByHeader(headerMap, "DUAL")
     End If
 
-    'Apply formating from template to new columns
-
-    Call CopyRowFormattingDown(wsTemplate, 9, ws, 3, lastRow, 1, lastCol)
+    ' Apply formatting from the template to every unit row. Data starts at
+    ' row 2 - row 1 is still the imported header row at this point.
+    Call CopyRowFormattingDown(wsTemplate, 9, ws, 2, lastRow, 1, lastCol)
 
     ' Initialize regex
     Set re1 = CreateObject("VBScript.RegExp")
@@ -695,6 +699,7 @@ Sub FormatScheduleWithSummaries(ws As Worksheet, wsTemplate As Worksheet, _
                         .HorizontalAlignment = xlLeft
                     End With
 
+                    Call percentColumnsSub(ws, percentCalcColumns, i, 0)
                     Call sumColumnsRowsSub(ws, sumColumns, changeBlock, i)
                     Set changeBlock = New Collection
                 End If

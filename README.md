@@ -1,6 +1,8 @@
 # Apartment-Schedule
 Apartment Schedule from AutoCAD block with attributes to excel using MVB
 
+**[Template Row Manual](TEMPLATE-ROW.md)** — how the mapping rows on the `template` sheet decide which columns each output sheet gets, and the sigma / percent markers that control which of them are totalled.
+
 
 Step 1:
 
@@ -47,3 +49,9 @@ The scrpit converts the source spreadsheet looking like this:
 ![image](https://github.com/user-attachments/assets/69c3aa9f-5315-4ba4-8017-7a7ef6982824)
 
 to a more user firendly format, broken down by floors and blocks:
+
+## Changing the columns
+
+The macros do not hard-code a column layout. Each output sheet reads one row of the `template` sheet — row 9 for the Long schedule, row 18 for the Short, row 29 for the unit types block — and builds itself from the field names it finds there. Reordering those cells reorders the schedule; deleting one drops the column; adding a sigma to the end of a cell totals it on every summary row.
+
+See **[TEMPLATE-ROW.md](TEMPLATE-ROW.md)** for the full rules. A condensed version can be stamped into the workbook itself as cell notes on the mapping rows — run `WriteTemplateMemo` from `Template Memo.bas`.

@@ -97,6 +97,38 @@ Function ColumnToLetter(colInput As Variant) As String
 End Function
 
 ' ----------------------------------------------------------------------------
+' Sheet Geometry Functions
+' ----------------------------------------------------------------------------
+
+' Last row holding anything on the sheet, whatever column it sits in.
+'
+' Use this rather than ws.Cells(rows.Count, <col>).End(xlUp): that walks up
+' one column and stops at the first gap from the bottom, so a run of rows
+' where that column happens to be blank is silently left out. On a schedule
+' that is exactly the units with no block or level - Excel sorts blanks last,
+' so they sit at the bottom, right where the lookup stops.
+Function GetLastDataRow(ws As Worksheet) As Long
+    Dim found As Range
+
+    If ws Is Nothing Then Exit Function
+
+    On Error Resume Next
+    Set found = ws.Cells.Find(What:="*", _
+                              After:=ws.Cells(1, 1), _
+                              LookIn:=xlFormulas, _
+                              LookAt:=xlPart, _
+                              SearchOrder:=xlByRows, _
+                              SearchDirection:=xlPrevious)
+    On Error GoTo 0
+
+    If found Is Nothing Then
+        GetLastDataRow = 1
+    Else
+        GetLastDataRow = found.row
+    End If
+End Function
+
+' ----------------------------------------------------------------------------
 ' Text Import Functions
 ' ----------------------------------------------------------------------------
 
@@ -738,6 +770,7 @@ Sub CopyRowFormattingDown(wsSource As Worksheet, sourceRow As Long, _
                           Optional endCol As Long = 0)
 
     Dim col As Long
+    Dim targetRow As Long
     Dim sourceRange As Range
     Dim targetRange As Range
     Dim lastCol As Long
@@ -768,8 +801,10 @@ Sub CopyRowFormattingDown(wsSource As Worksheet, sourceRow As Long, _
     For col = startCol To endCol
         Set sourceRange = wsSource.Cells(sourceRow, col)
 
-        For targetStartRow = 1 To targetEndRow
-            Set targetRange = wsTarget.Cells(targetStartRow, col)
+        ' Its own counter - looping on targetStartRow overwrote the argument
+        ' and started every column at row 1, ignoring the caller's start row
+        For targetRow = targetStartRow To targetEndRow
+            Set targetRange = wsTarget.Cells(targetRow, col)
 
             ' Copy font properties
             With targetRange.Font
@@ -807,7 +842,7 @@ Sub CopyRowFormattingDown(wsSource As Worksheet, sourceRow As Long, _
             targetRange.IndentLevel = sourceRange.IndentLevel
             targetRange.ShrinkToFit = sourceRange.ShrinkToFit
             targetRange.ReadingOrder = sourceRange.ReadingOrder
-        Next targetStartRow
+        Next targetRow
     Next col
 
     ' Restore settings
