@@ -99,6 +99,12 @@ Sub ProduceHQA()
         Dim isCsv As Boolean
         isCsv = (LCase(Right(filePath, 4)) = ".csv")
 
+        ' Force the TYPE column to import as text. Left to its own devices the
+        ' text import parses unit types such as "1E4" as 1 x 10^4 and lands
+        ' 10000 in the cell, which then flows through the whole module.
+        Dim colDataTypes As Variant
+        colDataTypes = BuildTextImportColumnTypes(filePath, isCsv, Array("TYPE"))
+
         With wsSource.QueryTables.Add( _
             Connection:="TEXT;" & filePath, _
             Destination:=wsSource.Range("A1"))
@@ -109,6 +115,9 @@ Sub ProduceHQA()
             .TextFileTextQualifier = xlTextQualifierDoubleQuote
             .TextFileConsecutiveDelimiter = False
             .AdjustColumnWidth = True
+            ' Must be set before Refresh, and only when the header line could
+            ' be read - otherwise leave Excel's own column guessing in place
+            If Not IsEmpty(colDataTypes) Then .TextFileColumnDataTypes = colDataTypes
             .Refresh BackgroundQuery:=False
             .Delete ' remove query but keep data
         End With
@@ -153,6 +162,16 @@ Sub ProduceHQA()
     ' Build header map for wsLong (header row = 1)
     Dim headerMap As Object
     Set headerMap = BuildHeaderMap(wsTemplate, 9)
+
+    ' Unit types such as "1E4" are text, not 1 x 10^4. Text format the TYPE
+    ' column on every output sheet before anything is written to it, so the row
+    ' copies and key writes below keep the string instead of storing 10000.
+    If headerMap.Exists("TYPE") Then
+        wsLong.columns(headerMap("TYPE")).NumberFormat = "@"
+        wsShort.columns(headerMap("TYPE")).NumberFormat = "@"
+        wsTypes.columns(headerMap("TYPE")).NumberFormat = "@"
+        wsBlocks.columns(headerMap("TYPE")).NumberFormat = "@"
+    End If
 
     ' Find the last used row in column C of the new sheet
     lastRow = wsLong.Cells(wsLong.rows.Count, 3).End(xlUp).row
@@ -399,7 +418,9 @@ Sub ProduceHQA()
     Dim tempArr
     
     For i = 2 To lastRow
-        unitType = wsLong.Cells(i, 5).Value
+        ' CStr so a type that still arrived as a number (an older source file,
+        ' or a header the import could not match) is compared as text
+        unitType = CStr(wsLong.Cells(i, 5).Value)
     
         If Len(unitType) > 0 And reTypes.Test(unitType) Then
     
@@ -839,7 +860,10 @@ Sub ProduceHQA()
                 casCol = GetColByHeader(headerMap, "CAS")
 
                 For o = blockStartRow To blockEndRow
-                    unitType = wsLong.Cells(o, typeCol).Value
+                    ' CStr so a type that still arrived as a number (an older
+                    ' source file, or a header the import could not match) is
+                    ' compared as text
+                    unitType = CStr(wsLong.Cells(o, typeCol).Value)
                     floorArea = 0
                     amenityArea = 0
                     aspect = 0
@@ -1497,6 +1521,88 @@ Public Sub ApplyDwellingLookup( _
     End If
 
 End Sub
+
+' ============================================================================
+' Build the TextFileColumnDataTypes array for the delimited text/CSV import.
+' Every column defaults to xlGeneralFormat except the ones whose header matches
+' an entry in textHeaders, which are forced to xlTextFormat. Without this Excel
+' parses unit types like "1E4" as 1 x 10^4 and stores the number 10000.
+' Returns Empty when the header line cannot be read - the caller should then
+' leave TextFileColumnDataTypes alone and let Excel guess as before.
+' Private so this standalone module keeps its own copy of the helper.
+' ============================================================================
+Private Function BuildTextImportColumnTypes(filePath As String, isCsv As Boolean, _
+                                            textHeaders As Variant) As Variant
+    Dim fileNum As Integer
+    Dim headerLine As String
+    Dim fields As Variant
+    Dim colTypes() As Variant
+    Dim delimiter As String
+    Dim headerName As String
+    Dim i As Long
+    Dim j As Long
+
+    BuildTextImportColumnTypes = Empty
+
+    If Len(Trim(filePath)) = 0 Then Exit Function
+    If IsEmpty(textHeaders) Then Exit Function
+
+    On Error GoTo ErrorHandler
+
+    ' Read the first non-blank line - that is the header row the import will use
+    fileNum = FreeFile
+    Open filePath For Input As #fileNum
+    Do While Not EOF(fileNum)
+        Line Input #fileNum, headerLine
+        If Len(Trim(headerLine)) > 0 Then Exit Do
+    Loop
+    Close #fileNum
+
+    If Len(Trim(headerLine)) = 0 Then Exit Function
+
+    ' Drop a UTF-8 BOM so the first header still matches
+    If Left(headerLine, 3) = Chr(239) & Chr(187) & Chr(191) Then
+        headerLine = Mid(headerLine, 4)
+    End If
+
+    If isCsv Then
+        delimiter = ","
+    Else
+        delimiter = vbTab
+    End If
+
+    fields = Split(headerLine, delimiter)
+    ReDim colTypes(LBound(fields) To UBound(fields))
+
+    For i = LBound(fields) To UBound(fields)
+        colTypes(i) = xlGeneralFormat
+
+        headerName = Trim(fields(i))
+        ' Strip the text qualifier quotes the import strips anyway
+        If Len(headerName) >= 2 Then
+            If Left(headerName, 1) = """" And Right(headerName, 1) = """" Then
+                headerName = Trim(Mid(headerName, 2, Len(headerName) - 2))
+            End If
+        End If
+        headerName = UCase(headerName)
+
+        For j = LBound(textHeaders) To UBound(textHeaders)
+            If headerName = UCase(Trim(CStr(textHeaders(j)))) Then
+                colTypes(i) = xlTextFormat
+                Exit For
+            End If
+        Next j
+    Next i
+
+    BuildTextImportColumnTypes = colTypes
+    Exit Function
+
+ErrorHandler:
+    Debug.Print "BuildTextImportColumnTypes failed for '" & filePath & "': " & Err.Description
+    On Error Resume Next
+    Close #fileNum
+    BuildTextImportColumnTypes = Empty
+End Function
 
 Sub ImportTSV(filePath As String)
 

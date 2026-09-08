@@ -62,6 +62,12 @@ Sub UnitTypes()
         Dim isCsv As Boolean
         isCsv = (LCase(Right(filePath, 4)) = ".csv")
 
+        ' Force the TYPE column to import as text. Left to its own devices the
+        ' text import parses unit types such as "1E4" as 1 x 10^4 and lands
+        ' 10000 in the cell, which then flows through the whole module.
+        Dim colDataTypes As Variant
+        colDataTypes = BuildTextImportColumnTypes(filePath, isCsv, Array("TYPE"))
+
         With wsSource.QueryTables.Add( _
             Connection:="TEXT;" & filePath, _
             Destination:=wsSource.Range("A1"))
@@ -72,6 +78,9 @@ Sub UnitTypes()
             .TextFileTextQualifier = xlTextQualifierDoubleQuote
             .TextFileConsecutiveDelimiter = False
             .AdjustColumnWidth = True
+            ' Must be set before Refresh, and only when the header line could
+            ' be read - otherwise leave Excel's own column guessing in place
+            If Not IsEmpty(colDataTypes) Then .TextFileColumnDataTypes = colDataTypes
             .Refresh BackgroundQuery:=False
             .Delete ' remove query but keep data
         End With
@@ -143,6 +152,9 @@ Sub UnitTypes()
     If hasBlok Then blokCol = GetColByHeader(sourceHeaderMap, "BLOK")
     If hasNo Then noCol = GetColByHeader(sourceHeaderMap, "NO")
 
+    Dim sourceTypeCol As Long
+    sourceTypeCol = GetColByHeader(sourceHeaderMap, "TYPE")
+
     For i = 2 To lastRow
         ' Disregard rows marked "XX" in LEVL, BLOK or NO.
         ' Nested Ifs, not "hasX And wsSource.Cells(...)" - VBA's And does not
@@ -161,7 +173,9 @@ Sub UnitTypes()
         End If
         If isXXRow Then GoTo NextRow
 
-        unitType = wsSource.Cells(i, GetColByHeader(sourceHeaderMap, "TYPE")).Value
+        ' CStr so a type that still arrived as a number (e.g. an older source
+        ' file, or a header the import could not match) is compared as text
+        unitType = CStr(wsSource.Cells(i, sourceTypeCol).Value)
 
         If Len(unitType) > 0 And reTypes.Test(unitType) Then
     
@@ -208,6 +222,12 @@ NextRow:
     minPasCol = GetColByHeader(typeHeaderMap, "minPAS")
     Dim min10Col As Long
     min10Col = GetColByHeader(typeHeaderMap, "min10")
+    Dim typeCol As Long
+    typeCol = GetColByHeader(typeHeaderMap, "TYPE")
+
+    ' Text format the output TYPE column before anything is written to it, so
+    ' Excel stores "1E4" as the string it is instead of re-parsing it as 10000
+    wsTypes.columns(typeCol).NumberFormat = "@"
         
     Dim unitBedroomArea As Double
     Dim percentFormula As String
@@ -232,7 +252,7 @@ NextRow:
         ' overwrite column A with count
         wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "No")).Value = typeItems(key)(0)
         ' overwrite column E with combined unit type
-        wsTypes.Cells(outputRow, GetColByHeader(typeHeaderMap, "Type")).Value = typeKeys(key)
+        wsTypes.Cells(outputRow, typeCol).Value = typeKeys(key)
 
         ' CALCULATE UNIT %
         If TypeHeaderMap.Exists("%") Then
@@ -322,7 +342,7 @@ NextRow:
 
     With wsTypes.Sort
         .SortFields.Clear
-        .SortFields.Add key:=wsTypes.Range(wsTypes.Cells(2, GetColByHeader(typeHeaderMap, "TYPE")), wsTypes.Cells(lastRow, GetColByHeader(typeHeaderMap, "TYPE"))), _
+        .SortFields.Add key:=wsTypes.Range(wsTypes.Cells(2, typeCol), wsTypes.Cells(lastRow, typeCol)), _
             SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
 
         .SetRange wsTypes.Range(wsTypes.Cells(2, 1), wsTypes.Cells(lastRow, typeLastCol))
@@ -344,6 +364,15 @@ NextRow:
 
     wsTemplate.Range(wsTemplate.Cells(20, 1), wsTemplate.Cells(28, typeLastCol)).Copy
     wsTypes.Range("A1").Insert Shift:=xlDown
+
+    ' The template formatting copied over the sheet brings its own number
+    ' format with it - put the TYPE column back to text so anything typed in
+    ' later is kept verbatim too (values already written stay text regardless)
+    wsTypes.columns(typeCol).NumberFormat = "@"
+
+    ' Stamp the issue date into the header block the template just brought in,
+    ' e.g. "7th September 2026"
+    wsTypes.Range("E5").Value = FormatDateWithSuffix(Date)
 
     lastRow = wsTypes.Cells(wsSource.rows.Count, 1).End(xlUp).row
 

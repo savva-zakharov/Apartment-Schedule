@@ -97,6 +97,89 @@ Function ColumnToLetter(colInput As Variant) As String
 End Function
 
 ' ----------------------------------------------------------------------------
+' Text Import Functions
+' ----------------------------------------------------------------------------
+
+' Build the TextFileColumnDataTypes array for a delimited text/CSV QueryTable
+' import. Every column defaults to xlGeneralFormat except the ones whose header
+' matches an entry in textHeaders, which are forced to xlTextFormat. Without
+' this Excel parses values like "1E4" as 1 x 10^4 and stores the number 10000.
+' Returns Empty when the header line cannot be read - callers should then leave
+' TextFileColumnDataTypes alone and let Excel guess as before.
+Function BuildTextImportColumnTypes(filePath As String, isCsv As Boolean, _
+                                    textHeaders As Variant) As Variant
+    Dim fileNum As Integer
+    Dim headerLine As String
+    Dim fields As Variant
+    Dim colTypes() As Variant
+    Dim delimiter As String
+    Dim headerName As String
+    Dim i As Long
+    Dim j As Long
+
+    BuildTextImportColumnTypes = Empty
+
+    If Len(Trim(filePath)) = 0 Then Exit Function
+    If IsEmpty(textHeaders) Then Exit Function
+
+    On Error GoTo ErrorHandler
+
+    ' Read the first non-blank line - that is the header row the import will use
+    fileNum = FreeFile
+    Open filePath For Input As #fileNum
+    Do While Not EOF(fileNum)
+        Line Input #fileNum, headerLine
+        If Len(Trim(headerLine)) > 0 Then Exit Do
+    Loop
+    Close #fileNum
+
+    If Len(Trim(headerLine)) = 0 Then Exit Function
+
+    ' Drop a UTF-8 BOM so the first header still matches
+    If Left(headerLine, 3) = Chr(239) & Chr(187) & Chr(191) Then
+        headerLine = Mid(headerLine, 4)
+    End If
+
+    If isCsv Then
+        delimiter = ","
+    Else
+        delimiter = vbTab
+    End If
+
+    fields = Split(headerLine, delimiter)
+    ReDim colTypes(LBound(fields) To UBound(fields))
+
+    For i = LBound(fields) To UBound(fields)
+        colTypes(i) = xlGeneralFormat
+
+        headerName = Trim(fields(i))
+        ' Strip the text qualifier quotes the import strips anyway
+        If Len(headerName) >= 2 Then
+            If Left(headerName, 1) = """" And Right(headerName, 1) = """" Then
+                headerName = Trim(Mid(headerName, 2, Len(headerName) - 2))
+            End If
+        End If
+        headerName = UCase(headerName)
+
+        For j = LBound(textHeaders) To UBound(textHeaders)
+            If headerName = UCase(Trim(CStr(textHeaders(j)))) Then
+                colTypes(i) = xlTextFormat
+                Exit For
+            End If
+        Next j
+    Next i
+
+    BuildTextImportColumnTypes = colTypes
+    Exit Function
+
+ErrorHandler:
+    Debug.Print "BuildTextImportColumnTypes failed for '" & filePath & "': " & Err.Description
+    On Error Resume Next
+    Close #fileNum
+    BuildTextImportColumnTypes = Empty
+End Function
+
+' ----------------------------------------------------------------------------
 ' Header Map Functions
 ' ----------------------------------------------------------------------------
 

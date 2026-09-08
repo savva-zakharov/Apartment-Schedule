@@ -55,6 +55,10 @@ Sub GenerateUnitSchedule()
     ' Build header maps
     Set headerMap = BuildHeaderMap(wsTemplate, 9)
 
+    ' Unit types such as "1E4" are text, not 1 x 10^4. Text format the TYPE
+    ' column before any data reaches it so Excel keeps the string it is given.
+    If headerMap.Exists("TYPE") Then wsLong.columns(headerMap("TYPE")).NumberFormat = "@"
+
     ' Copy columns from wsSource to wsLong
     Call CopyColumnsByHeader(wsSource, wsLong, wsTemplate, 1, 9)
     
@@ -112,9 +116,15 @@ End Sub
 ' ============================================================================
 ' Import data from CSV/TXT file into wsSource
 ' ============================================================================
-Sub ImportData(wsSource As Worksheet, filePath As String)
+' textHeaders lists the headers that must be imported as text instead of being
+' parsed by Excel - defaults to TYPE, whose values ("1E4") are otherwise read
+' as scientific notation and stored as the number 10000
+Sub ImportData(wsSource As Worksheet, filePath As String, Optional textHeaders As Variant)
     Dim qt As QueryTable
     Dim isCsv As Boolean
+    Dim colDataTypes As Variant
+    
+    If IsMissing(textHeaders) Then textHeaders = Array("TYPE")
     
     Application.DisplayAlerts = False
     wsSource.Cells.Clear
@@ -125,6 +135,7 @@ Sub ImportData(wsSource As Worksheet, filePath As String)
     Next qt
     
     isCsv = (LCase(Right(filePath, 4)) = ".csv")
+    colDataTypes = BuildTextImportColumnTypes(filePath, isCsv, textHeaders)
     
     With wsSource.QueryTables.Add( _
         Connection:="TEXT;" & filePath, _
@@ -136,6 +147,9 @@ Sub ImportData(wsSource As Worksheet, filePath As String)
         .TextFileTextQualifier = xlTextQualifierDoubleQuote
         .TextFileConsecutiveDelimiter = False
         .AdjustColumnWidth = True
+        ' Must be set before Refresh, and only when the header line could be
+        ' read - otherwise leave Excel's own column guessing in place
+        If Not IsEmpty(colDataTypes) Then .TextFileColumnDataTypes = colDataTypes
         .Refresh BackgroundQuery:=False
         .Delete
     End With
